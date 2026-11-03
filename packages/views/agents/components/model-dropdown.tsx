@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, Cpu, Loader2, Plus, Check, Info } from "@multica/ui/icons";
 import { ChevronDown, Cpu, Loader2, Plus, Check, Info } from "lucide-react";
 import { api } from "@multica/core/api";
 import {
@@ -37,6 +38,7 @@ const SERVER_PROVIDER = "Server";
 // needs when their runtime could not enumerate anything (MUL-6606).
 export function ModelDropdown({
   runtimeId,
+  workspaceSlug,
   runtimeOnline,
   value,
   onChange,
@@ -44,6 +46,8 @@ export function ModelDropdown({
   disabled,
 }: {
   runtimeId: string | null;
+  /** Target workspace when rendered before a workspace route is active. */
+  workspaceSlug?: string;
   runtimeOnline: boolean;
   value: string;
   onChange: (value: string) => void;
@@ -57,7 +61,7 @@ export function ModelDropdown({
   const [search, setSearch] = useState("");
 
   const modelsQuery = useQuery(
-    runtimeModelsOptions(runtimeOnline ? runtimeId : null),
+    runtimeModelsOptions(runtimeOnline ? runtimeId : null, workspaceSlug),
   );
   const serverModelsQuery = useQuery({
     queryKey: ["llm", "models", "enabled"],
@@ -137,7 +141,7 @@ export function ModelDropdown({
 
   const refresh = () => {
     if (!runtimeId || !runtimeOnline) return;
-    void refreshRuntimeModels(queryClient, runtimeId).catch(() => {
+    void refreshRuntimeModels(queryClient, runtimeId, workspaceSlug).catch(() => {
       // React Query owns the error state rendered below. Swallow the returned
       // promise rejection so a failed manual refresh is not also unhandled.
     });

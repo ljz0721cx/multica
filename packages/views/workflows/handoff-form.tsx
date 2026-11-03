@@ -27,7 +27,7 @@ import {
 import { Spinner } from "@multica/ui/components/ui/spinner";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { cn } from "@multica/ui/lib/utils";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown } from "@multica/ui/icons";
 import { ActorAvatar } from "../common/actor-avatar";
 import { PickerEmpty, PickerItem, PickerSection, PropertyPicker } from "../issues/components/pickers/property-picker";
 import { StatusIcon } from "../issues/components/status-icon";
@@ -101,12 +101,18 @@ export function WorkflowHandoffForm({
   workflow,
   statusKey,
   canEdit,
+  canCopyForProject = true,
   project,
   onSaved,
 }: {
   workflow: IssueWorkflow;
   statusKey: string;
   canEdit: boolean;
+  /**
+   * Whether saving for this project only is offered: the copy switches the
+   * project's workflow, which only admins and the project's lead may do.
+   */
+  canCopyForProject?: boolean;
   /** The project the form is opened from: the brief preview is for it. */
   project?: Pick<Project, "id" | "title">;
   onSaved?: () => void;
@@ -131,7 +137,7 @@ export function WorkflowHandoffForm({
   const handler = draft.handler;
   const needsTarget = (handler.type === "agent" || handler.type === "member") && !handler.id;
   const dirty = !sameStep(savedHandoff(draft), savedHandoff(saved));
-  const askScope = canEdit && dirty && !!project && !workflow.is_default && sharing.others.length > 0;
+  const askScope = canEdit && canCopyForProject && dirty && !!project && !workflow.is_default && sharing.others.length > 0;
   useEffect(() => {
     if (!dirty) setScope("all");
   }, [dirty]);

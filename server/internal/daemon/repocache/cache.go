@@ -19,12 +19,23 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/processtree"
+	"github.com/multica-ai/multica/server/pkg/redact"
 )
 
 // gitEnv returns an environment for git subprocesses that contact remotes.
 // It passes the full daemon environment so credential helpers (e.g. gh) can
 // locate their config, and disables TTY prompting so auth failures produce
 // clear errors instead of blocking on a non-existent terminal.
+//
+// GIT_TERMINAL_PROMPT=0 does not stop GUI credential helpers: on Windows the
+// Git Credential Manager (credential.helper=manager) opens a login window —
+// for GitLab hosts a browser OAuth page — for every clone/fetch that has no
+// stored credential. Startup runs one sync goroutine per workspace in
+// parallel, so a first open on a fresh machine sprayed dozens of GCM dialogs
+// at once. GCM_INTERACTIVE=never keeps stored-credential lookup working but
+// makes GCM fail fast instead of prompting, so background sync reports a
+// clear error and the user authenticates deliberately once; the next sync
+// cycle picks up the stored credential automatically.
 //
 // safe.directory=* is set via GIT_CONFIG_* env vars so git trusts all
 // directories regardless of ownership. The daemon manages its own bare
@@ -49,6 +60,7 @@ func gitEnv() []string {
 	idx := strconv.Itoa(existing)
 	return append(base,
 		"GIT_TERMINAL_PROMPT=0",
+		"GCM_INTERACTIVE=never",
 		"GIT_CONFIG_COUNT="+strconv.Itoa(existing+1),
 		"GIT_CONFIG_KEY_"+idx+"=safe.directory",
 		"GIT_CONFIG_VALUE_"+idx+"=*",
@@ -765,6 +777,10 @@ type WorktreeResult struct {
 	// that no remote-tracking ref reaches.
 	UncommittedFiles int `json:"uncommitted_files,omitempty"`
 	UnpushedCommits  int `json:"unpushed_commits,omitempty"`
+	// FetchError is set when refreshing the cache from the remote failed and
+	// the checkout was based on what the cache already held, so it may be
+	// behind the remote. It carries the redacted git error for the caller.
+	FetchError string `json:"fetch_error,omitempty"`
 }
 
 // Reasons CreateWorktree keeps an existing checkout, reported in
@@ -829,13 +845,15 @@ func (c *Cache) CreateWorktreeContext(ctx context.Context, params WorktreeParams
 	// to the modern remote-tracking layout on first run, so subsequent fetches
 	// never collide with the refs/heads/agent/* branches that worktree creation
 	// locks in this same bare repo.
+	var fetchErr string
 	if err := gitFetchContext(ctx, barePath); err != nil {
 		if ctx.Err() != nil {
 			return nil, context.Cause(ctx)
 		}
-		// Non-fatal: preserve cached state and continue, but make the warning
-		// loud enough that it's findable in the daemon log. The agent will
-		// receive an older snapshot than the remote head.
+		// Non-fatal: preserve cached state and continue. The agent will
+		// receive an older snapshot than the remote head, so the result
+		// carries the error back to the CLI as well as the daemon log.
+		fetchErr = redact.Text(err.Error())
 		c.logger.Warn("repo checkout: fetch failed, agent will see possibly stale code",
 			"url", params.RepoURL,
 			"error", err,
@@ -906,6 +924,7 @@ func (c *Cache) CreateWorktreeContext(ctx context.Context, params WorktreeParams
 			return nil, context.Cause(ctx)
 		}
 
+		result.FetchError = fetchErr
 		c.logCheckoutReady("repo checkout: isolated checkout ready", params.RepoURL, baseRef, result)
 		return result, nil
 	}
@@ -936,6 +955,7 @@ func (c *Cache) CreateWorktreeContext(ctx context.Context, params WorktreeParams
 			return nil, context.Cause(ctx)
 		}
 
+		result.FetchError = fetchErr
 		c.logCheckoutReady("repo checkout: existing worktree updated", params.RepoURL, baseRef, result)
 		return result, nil
 	}
@@ -974,6 +994,7 @@ func (c *Cache) CreateWorktreeContext(ctx context.Context, params WorktreeParams
 	return &WorktreeResult{
 		Path:       worktreePath,
 		BranchName: actualBranch,
+		FetchError: fetchErr,
 	}, nil
 }
 
