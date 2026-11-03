@@ -2470,6 +2470,8 @@ export class ApiClient {
       apply_to_machine?: boolean;
       /** Runtime-wide concurrency cap; `null` removes it, omit to leave unchanged. */
       max_concurrent_tasks?: number | null;
+      /** Replaces the runtime server-model allowlist; omit to leave unchanged. */
+      server_model_ids?: string[];
     },
   ): Promise<AgentRuntime> {
     const raw = await this.fetch<unknown>(`/api/runtimes/${runtimeId}`, {

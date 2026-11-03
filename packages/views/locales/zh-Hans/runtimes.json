@@ -166,6 +166,11 @@
     "concurrency_none": "不限制",
     "concurrency_hint": "此运行时上所有智能体同时进行的运行总数上限（{{min}}–{{max}}）。留空表示不限制。",
     "toast_concurrency_failed": "更新并发上限失败",
+    "server_models_title": "服务端模型",
+    "server_models_loading": "正在加载模型…",
+    "server_models_empty": "还没有已启用的服务端模型。请先在设置 → 模型中同步并启用。",
+    "server_models_none": "未绑定",
+    "toast_server_models_failed": "更新服务端模型绑定失败",
     "visibility_label": {
       "private": "私有",
       "public": "公开",

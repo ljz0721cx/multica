@@ -169,6 +169,11 @@
     "concurrency_none": "No limit",
     "concurrency_hint": "Max runs at once across all agents on this runtime ({{min}}–{{max}}). Leave empty for no limit.",
     "toast_concurrency_failed": "Failed to update concurrency limit",
+    "server_models_title": "Server models",
+    "server_models_loading": "Loading models…",
+    "server_models_empty": "No enabled server models yet. Sync and enable them in Settings → Models first.",
+    "server_models_none": "None bound",
+    "toast_server_models_failed": "Failed to update server model bindings",
     "visibility_label": {
       "private": "Private",
       "public": "Public",

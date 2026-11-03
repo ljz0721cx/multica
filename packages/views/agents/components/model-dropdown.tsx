@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Cpu, Loader2, Plus, Check, Info } from "@multica/ui/icons";
 import { api } from "@multica/core/api";
+import { useWorkspaceId } from "@multica/core/hooks";
 import {
   refreshRuntimeModels,
+  runtimeListOptions,
   runtimeModelsOptions,
 } from "@multica/core/runtimes";
 import type { RuntimeModel } from "@multica/core/types";
@@ -56,16 +58,22 @@ export function ModelDropdown({
 }) {
   const { t } = useT("agents");
   const queryClient = useQueryClient();
+  const wsId = useWorkspaceId();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
   const modelsQuery = useQuery(
     runtimeModelsOptions(runtimeOnline ? runtimeId : null, workspaceSlug),
   );
+  const runtimesQuery = useQuery({
+    ...runtimeListOptions(wsId ?? "", undefined, workspaceSlug),
+    enabled: Boolean(wsId && runtimeId),
+  });
   const serverModelsQuery = useQuery({
     queryKey: ["llm", "models", "enabled"],
     queryFn: () => api.listEnabledLLMModels(),
     staleTime: 60_000,
+    enabled: Boolean(runtimeId),
   });
 
   const supported = modelsQuery.data?.supported ?? true;
@@ -75,14 +83,20 @@ export function ModelDropdown({
     () => modelsQuery.data?.models ?? [],
     [modelsQuery.data],
   );
+  const allowedServerIds = useMemo(() => {
+    const rt = (runtimesQuery.data ?? []).find((r) => r.id === runtimeId);
+    return new Set(rt?.server_model_ids ?? []);
+  }, [runtimesQuery.data, runtimeId]);
   const serverModels = useMemo<RuntimeModel[]>(
     () =>
-      (serverModelsQuery.data ?? []).map((m) => ({
-        id: m.model_id,
-        label: m.label || m.model_id,
-        provider: SERVER_PROVIDER,
-      })),
-    [serverModelsQuery.data],
+      (serverModelsQuery.data ?? [])
+        .filter((m) => allowedServerIds.has(m.model_id))
+        .map((m) => ({
+          id: m.model_id,
+          label: m.label || m.model_id,
+          provider: SERVER_PROVIDER,
+        })),
+    [serverModelsQuery.data, allowedServerIds],
   );
   const models = useMemo(
     () => [...serverModels, ...runtimeModels],

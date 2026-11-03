@@ -50,10 +50,14 @@ type AgentRuntimeResponse struct {
 	ProfileID *string `json:"profile_id"`
 	// MaxConcurrentTasks caps tasks running at once across every agent bound
 	// to this runtime (GitHub #9626); null means no runtime-wide cap.
-	MaxConcurrentTasks *int32  `json:"max_concurrent_tasks"`
-	LastSeenAt         *string `json:"last_seen_at"`
-	CreatedAt          string  `json:"created_at"`
-	UpdatedAt          string  `json:"updated_at"`
+	MaxConcurrentTasks *int32 `json:"max_concurrent_tasks"`
+	// ServerModelIDs is the allowlist of instance llm_model.model_id values
+	// this runtime may use. Empty means none bound (claim will not inject
+	// gateway env for server models).
+	ServerModelIDs []string `json:"server_model_ids"`
+	LastSeenAt     *string  `json:"last_seen_at"`
+	CreatedAt      string   `json:"created_at"`
+	UpdatedAt      string   `json:"updated_at"`
 }
 
 func runtimeToResponse(rt db.AgentRuntime) AgentRuntimeResponse {
@@ -82,6 +86,7 @@ func runtimeToResponse(rt db.AgentRuntime) AgentRuntimeResponse {
 		SharedWith:         runtimeSharedWithStrings(rt.SharedWith),
 		ProfileID:          uuidToPtr(rt.ProfileID),
 		MaxConcurrentTasks: int4ToPtr(rt.MaxConcurrentTasks),
+		ServerModelIDs:     []string{},
 		LastSeenAt:         timestampToPtr(rt.LastSeenAt),
 		CreatedAt:          timestampToString(rt.CreatedAt),
 		UpdatedAt:          timestampToString(rt.UpdatedAt),
@@ -488,6 +493,10 @@ type UpdateAgentRuntimeRequest struct {
 	// cap. Absent leaves it unchanged. Owner / workspace admin only.
 	MaxConcurrentTasks json.RawMessage `json:"max_concurrent_tasks,omitempty"`
 	maxConcurrentTasks pgtype.Int4
+	// ServerModelIDs replaces the runtime's server LLM allowlist when non-nil.
+	// Each id must be an enabled llm_model.model_id. Empty slice clears all
+	// bindings. Absent leaves bindings unchanged.
+	ServerModelIDs *[]string `json:"server_model_ids,omitempty"`
 }
 
 // parseRuntimeMaxConcurrentTasks decodes the tri-state PATCH field: JSON null
@@ -665,6 +674,35 @@ func (h *Handler) UpdateAgentRuntime(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.ServerModelIDs != nil {
+		enabledIDs, err := h.Queries.ListEnabledLLMModelIDs(r.Context())
+		if err != nil {
+			slog.Error("list enabled llm models failed", "error", err, "runtime_id", runtimeID)
+			writeError(w, http.StatusInternalServerError, "failed to update runtime")
+			return
+		}
+		enabled := make(map[string]struct{}, len(enabledIDs))
+		for _, id := range enabledIDs {
+			enabled[id] = struct{}{}
+		}
+		for _, raw := range *req.ServerModelIDs {
+			id := strings.TrimSpace(raw)
+			if id == "" {
+				continue
+			}
+			if _, ok := enabled[id]; !ok {
+				writeError(w, http.StatusBadRequest, "server_model_ids contains unknown or disabled model: "+id)
+				return
+			}
+		}
+		if err := h.replaceRuntimeLLMBindings(r.Context(), runtimeUUID, *req.ServerModelIDs); err != nil {
+			slog.Error("replace runtime llm bindings failed", "error", err, "runtime_id", runtimeID)
+			writeError(w, http.StatusInternalServerError, "failed to update runtime")
+			return
+		}
+		changed = true
+	}
+
 	if changed {
 		// Notify connected clients that runtime metadata changed so the
 		// list/detail pages refresh — matches the pattern used by
@@ -674,7 +712,7 @@ func (h *Handler) UpdateAgentRuntime(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, runtimeToResponse(rt))
+	writeJSON(w, http.StatusOK, h.runtimeResponse(r.Context(), rt))
 }
 
 // updateRuntimeMaxConcurrentTasks writes the runtime-wide cap and then waits
@@ -1230,7 +1268,7 @@ func (h *Handler) RevokeRuntimeWorkspaceAccess(w http.ResponseWriter, r *http.Re
 	)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"runtime":           runtimeToResponse(updated),
+		"runtime":           h.runtimeResponse(r.Context(), updated),
 		"agents_unbound":    len(result.UnboundAgents),
 		"tasks_cancelled":   len(result.CancelledTasks),
 		"autopilots_paused": len(result.PausedAutopilots),
@@ -1275,7 +1313,7 @@ func (h *Handler) ListAgentRuntimes(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]AgentRuntimeResponse, len(runtimes))
 	for i, rt := range runtimes {
-		resp[i] = runtimeToResponse(rt)
+		resp[i] = h.runtimeResponse(r.Context(), rt)
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -1449,6 +1487,10 @@ func (h *Handler) DeleteAgentRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := qtx.DeleteRuntimeLLMModelsByRuntime(r.Context(), rt.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete runtime")
+		return
+	}
 	if err := qtx.DeleteAgentRuntime(r.Context(), rt.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete runtime")
 		return
@@ -1662,7 +1704,11 @@ func (h *Handler) UnbindAgentsAndDeleteRuntime(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Finally delete the runtime row itself.
+	// Finally delete bindings then the runtime row itself.
+	if err := qtx.DeleteRuntimeLLMModelsByRuntime(r.Context(), rt.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete runtime")
+		return
+	}
 	if err := qtx.DeleteAgentRuntime(r.Context(), rt.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete runtime")
 		return

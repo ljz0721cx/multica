@@ -972,7 +972,10 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		resp = append(resp, runtimeToResponse(registered))
+		h.ensureRuntimeLLMBindings(r.Context(), qtx, registered.ID)
+		regResp := runtimeToResponse(registered)
+		regResp.ServerModelIDs = listRuntimeServerModelIDs(r.Context(), qtx, registered.ID)
+		resp = append(resp, regResp)
 	}
 	for _, failed := range req.FailedProfiles {
 		profileID := strings.TrimSpace(failed.ProfileID)
@@ -1265,6 +1268,9 @@ func (h *Handler) mergeLegacyRuntime(ctx context.Context, newRuntimeID, oldRunti
 		LegacyDaemonID: strToText(legacyID),
 	}); err != nil {
 		return fmt.Errorf("record legacy daemon_id: %w", err)
+	}
+	if err := qtx.DeleteRuntimeLLMModelsByRuntime(ctx, oldRuntimeID); err != nil {
+		return fmt.Errorf("delete old runtime llm bindings: %w", err)
 	}
 	if err := qtx.DeleteAgentRuntime(ctx, oldRuntimeID); err != nil {
 		return fmt.Errorf("delete old runtime: %w", err)
@@ -2944,9 +2950,10 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			slog.Warn("failed to unmarshal agent custom_env", "agent_id", uuidToString(agent.ID), "error", err)
 		}
 	}
-	// When the agent is bound to a server-managed model, inject the instance
-	// LLM gateway credentials so the daemon subprocess uses that catalog.
-	customEnv = h.injectServerLLMEnv(r.Context(), agent.Model.String, customEnv)
+	// When the agent is bound to a server-managed model that this runtime
+	// allowlists, inject the instance LLM gateway credentials so the daemon
+	// subprocess uses that catalog.
+	customEnv = h.injectServerLLMEnv(r.Context(), task.RuntimeID, agent.Model.String, customEnv)
 	var customArgs []string
 	if agent.CustomArgs != nil {
 		if err := json.Unmarshal(agent.CustomArgs, &customArgs); err != nil {

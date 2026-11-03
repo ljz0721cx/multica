@@ -92,6 +92,11 @@ export interface RuntimeDevice {
    * own limit still applies. Older backends omit the field.
    */
   max_concurrent_tasks?: number | null;
+  /**
+   * Allowlist of instance `llm_model.model_id` values this runtime may use.
+   * Empty means no server models are bound. Older backends omit the field.
+   */
+  server_model_ids?: string[];
   last_seen_at: string | null;
   created_at: string;
   updated_at: string;

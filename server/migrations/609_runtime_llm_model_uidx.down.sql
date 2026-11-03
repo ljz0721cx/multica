@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS runtime_llm_model_runtime_model_uidx;

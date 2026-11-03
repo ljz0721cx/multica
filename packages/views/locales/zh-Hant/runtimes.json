@@ -166,6 +166,11 @@
     "concurrency_none": "不限制",
     "concurrency_hint": "此執行時上所有 AI 代理同時進行的執行總數上限（{{min}}–{{max}}）。留空表示不限制。",
     "toast_concurrency_failed": "更新並行上限失敗",
+    "server_models_title": "服務端模型",
+    "server_models_loading": "正在載入模型…",
+    "server_models_empty": "還沒有已啟用的服務端模型。請先在設定 → 模型中同步並啟用。",
+    "server_models_none": "未綁定",
+    "toast_server_models_failed": "更新服務端模型綁定失敗",
     "visibility_label": {
       "private": "私有",
       "public": "公開",

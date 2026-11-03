@@ -88,6 +88,10 @@ func (h *Handler) DisconnectQoderConnection(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusInternalServerError, "cannot disconnect Qoder")
 			return
 		}
+		if err := qtx.DeleteRuntimeLLMModelsByRuntime(r.Context(), runtimeID); err != nil {
+			writeError(w, http.StatusInternalServerError, "cannot disconnect Qoder")
+			return
+		}
 		if err := qtx.DeleteAgentRuntime(r.Context(), runtimeID); err != nil {
 			writeError(w, http.StatusInternalServerError, "cannot disconnect Qoder")
 			return

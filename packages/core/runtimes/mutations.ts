@@ -92,6 +92,8 @@ export function useUpdateRuntime(wsId: string) {
         apply_to_machine?: boolean;
         // null removes the runtime-wide concurrency cap; omit to leave unchanged.
         max_concurrent_tasks?: number | null;
+        // Replaces the runtime server-model allowlist; omit to leave unchanged.
+        server_model_ids?: string[];
       };
     }) => api.updateRuntime(runtimeId, patch),
     onSettled: () => {

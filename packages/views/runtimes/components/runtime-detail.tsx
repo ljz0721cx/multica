@@ -55,6 +55,7 @@ import { UsageSection } from "./usage-section";
 import { DeleteRuntimeDialog } from "./delete-runtime-dialog";
 import { RuntimeAccessEditor, RuntimeAccessReadout } from "./runtime-access-editor";
 import { RuntimeConcurrencyField } from "./runtime-concurrency-field";
+import { RuntimeServerModelsField } from "./runtime-server-models-field";
 import { DeleteRuntimeProfileDialog } from "./delete-runtime-profile-dialog";
 import { runtimeRowLabel } from "./runtime-machines";
 import { useT, useTimeAgo } from "../../i18n";
@@ -391,6 +392,11 @@ function RuntimeProperties({
       <ObjectPanelSection title={t(($) => $.detail.concurrency_title)}>
         <div className="pr-0.5 pt-1">
           <RuntimeConcurrencyField runtime={runtime} canEdit={canEditRuntime} />
+        </div>
+      </ObjectPanelSection>
+      <ObjectPanelSection title={t(($) => $.detail.server_models_title)}>
+        <div className="pr-0.5 pt-1">
+          <RuntimeServerModelsField runtime={runtime} canEdit={canEditRuntime} />
         </div>
       </ObjectPanelSection>
     </div>

@@ -1263,6 +1263,13 @@ type LlmModel struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type RuntimeLlmModel struct {
+	ID        pgtype.UUID        `json:"id"`
+	RuntimeID pgtype.UUID        `json:"runtime_id"`
+	ModelID   string             `json:"model_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type NotificationPreference struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`

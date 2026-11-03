@@ -592,6 +592,12 @@ func (h *Handler) DeleteRuntimeProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		teardowns = append(teardowns, teardown)
+		if err := qtx.DeleteRuntimeLLMModelsByRuntime(r.Context(), rid); err != nil {
+			slog.Error("runtime profile delete llm bindings failed",
+				"runtime_id", uuidToString(rid), "profile_id", uuidToString(profileUUID), "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to unbind agents")
+			return
+		}
 	}
 
 	// Now the runtime rows have no agent references; remove them, then the

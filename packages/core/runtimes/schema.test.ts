@@ -33,3 +33,23 @@ describe("runtime concurrency cap response contract", () => {
     expect(parsed.name).toBe("Claude");
   });
 });
+
+describe("runtime server model allowlist response contract", () => {
+  it("preserves bindings from a new server", () => {
+    expect(
+      AgentRuntimeSchema.parse({
+        id: "r",
+        workspace_id: "w",
+        server_model_ids: ["gpt-4o"],
+      }).server_model_ids,
+    ).toEqual(["gpt-4o"]);
+  });
+  it("defaults missing bindings to empty", () => {
+    expect(AgentRuntimeSchema.parse({ id: "r", workspace_id: "w" }).server_model_ids).toEqual([]);
+  });
+  it.each([null, "gpt-4o", [123], {}])("fails closed for malformed bindings: %j", (server_model_ids) => {
+    expect(
+      AgentRuntimeSchema.parse({ id: "r", workspace_id: "w", server_model_ids }).server_model_ids,
+    ).toEqual([]);
+  });
+});

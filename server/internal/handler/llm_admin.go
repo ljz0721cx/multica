@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/logger"
 	"github.com/multica-ai/multica/server/internal/util/secretbox"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -620,15 +621,29 @@ func (h *Handler) GetModelAdminAccess(w http.ResponseWriter, r *http.Request) {
 
 // injectServerLLMEnv overlays the instance LLM gateway credentials onto the
 // agent's claim-time custom_env when the agent's bound model is an enabled
-// server catalog entry. Agent-owned custom_env keys win so operators can still
-// override per agent.
-func (h *Handler) injectServerLLMEnv(ctx context.Context, modelID string, customEnv map[string]string) map[string]string {
+// server catalog entry that the claiming runtime allowlists. Agent-owned
+// custom_env keys win so operators can still override per agent.
+func (h *Handler) injectServerLLMEnv(ctx context.Context, runtimeID pgtype.UUID, modelID string, customEnv map[string]string) map[string]string {
 	modelID = strings.TrimSpace(modelID)
 	if modelID == "" {
 		return customEnv
 	}
 	m, err := h.Queries.GetLLMModelByModelID(ctx, modelID)
 	if err != nil || !m.Enabled {
+		return customEnv
+	}
+	if !runtimeID.Valid {
+		return customEnv
+	}
+	bound, bindErr := h.Queries.HasRuntimeLLMModel(ctx, db.HasRuntimeLLMModelParams{
+		RuntimeID: runtimeID,
+		ModelID:   modelID,
+	})
+	if bindErr != nil {
+		slog.Warn("server llm: check runtime binding failed", "model_id", modelID, "error", bindErr)
+		return customEnv
+	}
+	if !bound {
 		return customEnv
 	}
 	cfg, err := h.Queries.GetLLMConfig(ctx, llmConfigID)
