@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2 } from "@multica/ui/icons";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Loader2, Plus, RefreshCw, Trash2 } from "@multica/ui/icons";
 import { toast } from "sonner";
-import type { LLMModel } from "@multica/core/types";
+import type { DiscoverLLMModel, LLMModel } from "@multica/core/types";
 import { api } from "@multica/core/api";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
+import { Checkbox } from "@multica/ui/components/ui/checkbox";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
 import {
@@ -48,6 +49,13 @@ export function ModelsTab() {
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<LLMModel | null>(null);
+
+  const [discoverOpen, setDiscoverOpen] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [discovered, setDiscovered] = useState<DiscoverLLMModel[]>([]);
+  const [discoverFilter, setDiscoverFilter] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
     setConfigLoading(true);
@@ -95,6 +103,72 @@ export function ModelsTab() {
       );
     } finally {
       setConfigSaving(false);
+    }
+  };
+
+  const openDiscover = async () => {
+    setDiscoverOpen(true);
+    setDiscovering(true);
+    setDiscoverFilter("");
+    try {
+      const list = await api.discoverLLMModelsAdmin();
+      setDiscovered(list);
+      // Default: already-enabled catalog models + newly discovered ones.
+      setSelectedIds(
+        new Set(
+          list
+            .filter((m) => (m.in_catalog && m.enabled) || !m.in_catalog)
+            .map((m) => m.model_id),
+        ),
+      );
+    } catch (e) {
+      setDiscovered([]);
+      setSelectedIds(new Set());
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : t(($) => $.models.toast_discover_failed),
+      );
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  const filteredDiscovered = useMemo(() => {
+    const needle = discoverFilter.trim().toLowerCase();
+    if (!needle) return discovered;
+    return discovered.filter(
+      (m) =>
+        m.model_id.toLowerCase().includes(needle) ||
+        m.label.toLowerCase().includes(needle),
+    );
+  }, [discovered, discoverFilter]);
+
+  const toggleSelected = (id: string, next: boolean) => {
+    setSelectedIds((prev) => {
+      const copy = new Set(prev);
+      if (next) copy.add(id);
+      else copy.delete(id);
+      return copy;
+    });
+  };
+
+  const handleSync = async () => {
+    if (selectedIds.size === 0) return;
+    setSyncing(true);
+    try {
+      await api.syncLLMModelsAdmin({ model_ids: [...selectedIds] });
+      toast.success(
+        t(($) => $.models.toast_sync_saved, { count: selectedIds.size }),
+      );
+      setDiscoverOpen(false);
+      await load();
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : t(($) => $.models.toast_sync_failed),
+      );
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -159,6 +233,8 @@ export function ModelsTab() {
     }
   };
 
+  const canDiscover = !configLoading && (!!baseUrl.trim() || hasApiKey);
+
   return (
     <SettingsTab title={t(($) => $.page.tabs.models)} scope="account">
       <SettingsSection
@@ -197,7 +273,7 @@ export function ModelsTab() {
                 </p>
               ) : null}
             </div>
-            <div>
+            <div className="flex flex-wrap gap-2">
               <Button
                 onClick={() => void handleSaveConfig()}
                 disabled={configSaving}
@@ -206,6 +282,14 @@ export function ModelsTab() {
                 {configSaving
                   ? t(($) => $.models.saving_config)
                   : t(($) => $.models.save_config)}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => void openDiscover()}
+                disabled={!canDiscover || discovering}
+              >
+                <RefreshCw />
+                {t(($) => $.models.discover_models)}
               </Button>
             </div>
           </div>
@@ -216,10 +300,21 @@ export function ModelsTab() {
         title={t(($) => $.models.catalog_title)}
         anchor="catalog"
         action={
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Plus />
-            {t(($) => $.models.add_model)}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void openDiscover()}
+              disabled={!canDiscover || discovering}
+            >
+              <RefreshCw />
+              {t(($) => $.models.discover_models)}
+            </Button>
+            <Button size="sm" onClick={() => setAddOpen(true)}>
+              <Plus />
+              {t(($) => $.models.add_model)}
+            </Button>
+          </div>
         }
       >
         {modelsLoading ? (
@@ -274,6 +369,88 @@ export function ModelsTab() {
           </SettingsCard>
         )}
       </SettingsSection>
+
+      <Dialog
+        open={discoverOpen}
+        onOpenChange={(open) => {
+          if (!open && !syncing) setDiscoverOpen(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t(($) => $.models.discover_title)}</DialogTitle>
+          </DialogHeader>
+          {discovering ? (
+            <div className="flex items-center gap-2 py-8 text-body text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              {t(($) => $.models.discovering)}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <Input
+                value={discoverFilter}
+                onChange={(e) => setDiscoverFilter(e.target.value)}
+                placeholder={t(($) => $.models.discover_filter_placeholder)}
+                spellCheck={false}
+              />
+              {filteredDiscovered.length === 0 ? (
+                <p className="text-body text-muted-foreground">
+                  {t(($) => $.models.discover_empty)}
+                </p>
+              ) : (
+                <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
+                  {filteredDiscovered.map((model) => {
+                    const checked = selectedIds.has(model.model_id);
+                    return (
+                      <label
+                        key={model.model_id}
+                        className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/50"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(value) =>
+                            toggleSelected(model.model_id, value === true)
+                          }
+                        />
+                        <span className="min-w-0 flex-1 truncate text-body">
+                          {model.label || model.model_id}
+                        </span>
+                        {model.in_catalog && model.enabled ? (
+                          <Badge variant="secondary">
+                            {t(($) => $.models.enabled_label)}
+                          </Badge>
+                        ) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDiscoverOpen(false)}
+              disabled={syncing}
+            >
+              {t(($) => $.models.cancel)}
+            </Button>
+            <Button
+              type="button"
+              disabled={syncing || discovering || selectedIds.size === 0}
+              aria-busy={syncing || undefined}
+              onClick={() => void handleSync()}
+            >
+              {syncing
+                ? t(($) => $.models.syncing)
+                : t(($) => $.models.sync_selected, {
+                    count: selectedIds.size,
+                  })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={addOpen}

@@ -5,13 +5,18 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/multica-ai/multica/server/internal/logger"
 	"github.com/multica-ai/multica/server/internal/util/secretbox"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -53,6 +58,17 @@ type UpdateLLMModelRequest struct {
 	Label     *string `json:"label"`
 	Enabled   *bool   `json:"enabled"`
 	SortOrder *int32  `json:"sort_order"`
+}
+
+type DiscoverLLMModelItem struct {
+	ModelID   string `json:"model_id"`
+	Label     string `json:"label"`
+	InCatalog bool   `json:"in_catalog"`
+	Enabled   bool   `json:"enabled"`
+}
+
+type SyncLLMModelsRequest struct {
+	ModelIDs []string `json:"model_ids"`
 }
 
 // isModelAdmin gates the model-management UI/API to operator "janle"
@@ -313,6 +329,271 @@ func (h *Handler) DeleteLLMModelAdmin(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// DiscoverLLMModelsAdmin lists models advertised by the configured OpenAI-
+// compatible gateway so the admin can pick which ones enter the catalog.
+func (h *Handler) DiscoverLLMModelsAdmin(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireModelAdmin(w, r); !ok {
+		return
+	}
+	cfg, err := h.Queries.GetLLMConfig(r.Context(), llmConfigID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusBadRequest, "configure the LLM gateway first")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load llm config")
+		return
+	}
+	baseURL := strings.TrimSpace(cfg.BaseUrl)
+	if baseURL == "" {
+		writeError(w, http.StatusBadRequest, "configure the LLM gateway base URL first")
+		return
+	}
+	apiKey, err := h.decryptLLMAPIKey(cfg)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ids, err := fetchGatewayModelIDs(r.Context(), baseURL, apiKey)
+	if err != nil {
+		slog.Warn("llm discover failed", append(logger.RequestAttrs(r), "error", err)...)
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	catalog, err := h.Queries.ListLLMModels(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list catalog models")
+		return
+	}
+	byID := make(map[string]db.LlmModel, len(catalog))
+	for _, m := range catalog {
+		byID[m.ModelID] = m
+	}
+	resp := make([]DiscoverLLMModelItem, 0, len(ids))
+	for _, id := range ids {
+		item := DiscoverLLMModelItem{ModelID: id, Label: id}
+		if m, ok := byID[id]; ok {
+			item.InCatalog = true
+			item.Enabled = m.Enabled
+			if strings.TrimSpace(m.Label) != "" {
+				item.Label = m.Label
+			}
+		}
+		resp = append(resp, item)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// SyncLLMModelsAdmin enables the selected gateway model IDs in the catalog
+// (creating missing rows). Unselected catalog entries are left untouched.
+func (h *Handler) SyncLLMModelsAdmin(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireModelAdmin(w, r); !ok {
+		return
+	}
+	var req SyncLLMModelsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	seen := map[string]struct{}{}
+	ids := make([]string, 0, len(req.ModelIDs))
+	for _, raw := range req.ModelIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		writeError(w, http.StatusBadRequest, "model_ids is required")
+		return
+	}
+
+	out := make([]LLMModelResponse, 0, len(ids))
+	for _, id := range ids {
+		existing, err := h.Queries.GetLLMModelByModelID(r.Context(), id)
+		if err == nil {
+			enabled := true
+			m, updErr := h.Queries.UpdateLLMModel(r.Context(), db.UpdateLLMModelParams{
+				ID:      existing.ID,
+				Enabled: &enabled,
+			})
+			if updErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to enable model")
+				return
+			}
+			out = append(out, llmModelToResponse(m))
+			continue
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusInternalServerError, "failed to look up model")
+			return
+		}
+		m, createErr := h.Queries.CreateLLMModel(r.Context(), db.CreateLLMModelParams{
+			ModelID:   id,
+			Label:     id,
+			Enabled:   true,
+			SortOrder: 0,
+		})
+		if createErr != nil {
+			if isUniqueViolation(createErr) {
+				// Race with another create — re-read and enable.
+				existing, getErr := h.Queries.GetLLMModelByModelID(r.Context(), id)
+				if getErr != nil {
+					writeError(w, http.StatusInternalServerError, "failed to create model")
+					return
+				}
+				enabled := true
+				m, updErr := h.Queries.UpdateLLMModel(r.Context(), db.UpdateLLMModelParams{
+					ID:      existing.ID,
+					Enabled: &enabled,
+				})
+				if updErr != nil {
+					writeError(w, http.StatusInternalServerError, "failed to enable model")
+					return
+				}
+				out = append(out, llmModelToResponse(m))
+				continue
+			}
+			writeError(w, http.StatusInternalServerError, "failed to create model")
+			return
+		}
+		out = append(out, llmModelToResponse(m))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) decryptLLMAPIKey(cfg db.LlmConfig) (string, error) {
+	if len(cfg.ApiKeyEncrypted) == 0 {
+		return "", nil
+	}
+	box, err := llmSecretBox()
+	if err != nil {
+		return "", err
+	}
+	plain, err := box.Open(cfg.ApiKeyEncrypted)
+	if err != nil {
+		return "", errors.New("failed to decrypt api key")
+	}
+	return strings.TrimSpace(string(plain)), nil
+}
+
+func llmModelsEndpoint(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	switch {
+	case base == "":
+		return ""
+	case strings.HasSuffix(base, "/models"):
+		return base
+	case strings.HasSuffix(base, "/v1"):
+		return base + "/models"
+	default:
+		return base + "/v1/models"
+	}
+}
+
+func fetchGatewayModelIDs(ctx context.Context, baseURL, apiKey string) ([]string, error) {
+	endpoint := llmModelsEndpoint(baseURL)
+	if endpoint == "" {
+		return nil, errors.New("base URL is empty")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("gateway request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read gateway response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg := strings.TrimSpace(string(body))
+		if len(msg) > 240 {
+			msg = msg[:240] + "…"
+		}
+		if msg == "" {
+			msg = resp.Status
+		}
+		return nil, fmt.Errorf("gateway returned %d: %s", resp.StatusCode, msg)
+	}
+	ids, err := parseGatewayModelIDs(body)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, errors.New("gateway returned no models")
+	}
+	return ids, nil
+}
+
+func parseGatewayModelIDs(raw []byte) ([]string, error) {
+	var envelope struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Models []struct {
+			ID string `json:"id"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		// Some gateways return a bare array of model objects.
+		var arr []struct {
+			ID string `json:"id"`
+		}
+		if err2 := json.Unmarshal(raw, &arr); err2 != nil {
+			return nil, errors.New("gateway response is not a model list")
+		}
+		ids := make([]string, 0, len(arr))
+		seen := map[string]struct{}{}
+		for _, m := range arr {
+			id := strings.TrimSpace(m.ID)
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		return ids, nil
+	}
+	src := envelope.Data
+	if len(src) == 0 {
+		src = envelope.Models
+	}
+	ids := make([]string, 0, len(src))
+	seen := map[string]struct{}{}
+	for _, m := range src {
+		id := strings.TrimSpace(m.ID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
+
 // GetModelAdminAccess tells the UI whether the current user may open model management.
 func (h *Handler) GetModelAdminAccess(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
@@ -352,19 +633,10 @@ func (h *Handler) injectServerLLMEnv(ctx context.Context, modelID string, custom
 		}
 		return customEnv
 	}
-	apiKey := ""
-	if len(cfg.ApiKeyEncrypted) > 0 {
-		box, boxErr := llmSecretBox()
-		if boxErr != nil {
-			slog.Warn("server llm: secret box unavailable", "error", boxErr)
-			return customEnv
-		}
-		plain, openErr := box.Open(cfg.ApiKeyEncrypted)
-		if openErr != nil {
-			slog.Warn("server llm: decrypt api key failed", "error", openErr)
-			return customEnv
-		}
-		apiKey = strings.TrimSpace(string(plain))
+	apiKey, keyErr := h.decryptLLMAPIKey(cfg)
+	if keyErr != nil {
+		slog.Warn("server llm: decrypt api key failed", "error", keyErr)
+		return customEnv
 	}
 	baseURL := strings.TrimSpace(cfg.BaseUrl)
 	if baseURL == "" && apiKey == "" {

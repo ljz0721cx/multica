@@ -731,6 +731,17 @@ export interface UpdateLLMModelRequest {
   sort_order?: number;
 }
 
+export interface DiscoverLLMModel {
+  model_id: string;
+  label: string;
+  in_catalog: boolean;
+  enabled: boolean;
+}
+
+export interface SyncLLMModelsRequest {
+  model_ids: string[];
+}
+
 export interface ModelAdminAccess {
   can_manage: boolean;
   can_create_workspace?: boolean;

@@ -1736,6 +1736,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Put("/api/llm/admin/config", h.UpsertLLMConfigAdmin)
 		r.Get("/api/llm/admin/models", h.ListLLMModelsAdmin)
 		r.Post("/api/llm/admin/models", h.CreateLLMModelAdmin)
+		r.Post("/api/llm/admin/models/discover", h.DiscoverLLMModelsAdmin)
+		r.Post("/api/llm/admin/models/sync", h.SyncLLMModelsAdmin)
 		r.Patch("/api/llm/admin/models/{modelId}", h.UpdateLLMModelAdmin)
 		r.Delete("/api/llm/admin/models/{modelId}", h.DeleteLLMModelAdmin)
 		// Sliding session renewal for clients that hold the session as a

@@ -60,6 +60,7 @@ import type {
   MarkIssueInboxReadResult,
   IssueUnread,
   Label,
+  DiscoverLLMModel,
   LLMConfig,
   LLMModel,
   MemberWithUser,
@@ -3842,6 +3843,17 @@ export const LLMModelSchema = z.object({
 export const LLMModelListSchema = z.array(LLMModelSchema);
 
 export const EMPTY_LLM_MODEL_LIST: LLMModel[] = [];
+
+export const DiscoverLLMModelSchema = z.object({
+  model_id: z.string().optional().default(""),
+  label: z.string().optional().default(""),
+  in_catalog: z.boolean().optional().default(false),
+  enabled: z.boolean().optional().default(false),
+}).loose();
+
+export const DiscoverLLMModelListSchema = z.array(DiscoverLLMModelSchema);
+
+export const EMPTY_DISCOVER_LLM_MODEL_LIST: DiscoverLLMModel[] = [];
 
 export const LLMConfigSchema = z.object({
   base_url: z.string().optional().default(""),

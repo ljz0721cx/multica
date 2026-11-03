@@ -32,6 +32,8 @@ import type {
   UpsertLLMConfigRequest,
   CreateLLMModelRequest,
   UpdateLLMModelRequest,
+  DiscoverLLMModel,
+  SyncLLMModelsRequest,
   ModelAdminAccess,
   ListIssuesParams,
   ListGroupedIssuesParams,
@@ -516,12 +518,14 @@ import {
   LLMModelListSchema,
   LLMConfigSchema,
   ModelAdminAccessSchema,
+  DiscoverLLMModelListSchema,
   EMPTY_SHARE_LINK,
   EMPTY_SHARE_LINK_INFO,
   EMPTY_JOIN_SHARE_LINK_RESPONSE,
   EMPTY_LLM_MODEL_LIST,
   EMPTY_LLM_CONFIG,
   EMPTY_MODEL_ADMIN_ACCESS,
+  EMPTY_DISCOVER_LLM_MODEL_LIST,
   type IssueView,
   type IssueViewPreference,
   type CreateIssueViewRequest,
@@ -3629,6 +3633,29 @@ export class ApiClient {
       },
       { endpoint: "POST /api/llm/admin/models" },
     );
+  }
+
+  async discoverLLMModelsAdmin(): Promise<DiscoverLLMModel[]> {
+    const raw = await this.fetch<unknown>("/api/llm/admin/models/discover", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    return parseWithFallback(
+      raw,
+      DiscoverLLMModelListSchema,
+      EMPTY_DISCOVER_LLM_MODEL_LIST,
+      { endpoint: "POST /api/llm/admin/models/discover" },
+    );
+  }
+
+  async syncLLMModelsAdmin(data: SyncLLMModelsRequest): Promise<LLMModel[]> {
+    const raw = await this.fetch<unknown>("/api/llm/admin/models/sync", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, LLMModelListSchema, EMPTY_LLM_MODEL_LIST, {
+      endpoint: "POST /api/llm/admin/models/sync",
+    });
   }
 
   async updateLLMModelAdmin(
