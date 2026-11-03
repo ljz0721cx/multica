@@ -108,6 +108,7 @@ const ANCHOR_WAIT_MS = 1500;
 
 export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
   const { t } = useT("settings");
+  const user = useAuthStore((s) => s.user);
   const workspace = useCurrentWorkspace();
   const workspaceName = workspace?.name ?? t(($) => $.page.workspace_fallback);
   const { role } = useCurrentMember(workspace?.id ?? "");
