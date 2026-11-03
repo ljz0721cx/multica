@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "@multica/ui/icons";
 import { toast } from "sonner";
 import type { LLMModel } from "@multica/core/types";
 import { api } from "@multica/core/api";

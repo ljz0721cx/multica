@@ -25,7 +25,6 @@ import {
   Workflow,
   Zap,
 } from "@multica/ui/icons";
-} from "lucide-react";
 import { useAuthStore } from "@multica/core/auth";
 import { api } from "@multica/core/api";
 import { useCurrentWorkspace } from "@multica/core/paths";
