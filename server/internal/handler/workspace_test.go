@@ -113,6 +113,32 @@ func TestCreateWorkspace_DisabledByConfig(t *testing.T) {
 	}
 }
 
+// TestCreateWorkspace_RestrictedToJanle ensures non-admin accounts cannot
+// create workspaces even when the global disable gate is off.
+func TestCreateWorkspace_RestrictedToJanle(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	t.Setenv("MULTICA_MODEL_ADMIN_EMAILS", "")
+
+	const slug = "handler-tests-janle-only-create"
+	ctx := context.Background()
+	_, _ = testPool.Exec(ctx, `DELETE FROM workspace WHERE slug = $1`, slug)
+	dbfx.Cleanup(t, `DELETE FROM workspace WHERE slug = $1`, slug)
+
+	req := newRequest("POST", "/api/workspaces", map[string]any{
+		"name": "Janle Only",
+		"slug": slug,
+	})
+	testutil.Call(t, testHandler.CreateWorkspace, req).Want(http.StatusForbidden)
+
+	var count int
+	dbfx.QueryRow(t, `SELECT count(*) FROM workspace WHERE slug = $1`, slug).Scan(&count)
+	if count != 0 {
+		t.Fatalf("expected no workspace row when non-admin creates, found %d", count)
+	}
+}
+
 // TestCreateWorkspace_AllowedEmails guards the self-host allowlist added by
 // #9400: when WorkspaceCreationAllowedEmails is set, only matching accounts
 // (case-insensitive) may create workspaces; everyone else gets 403 and no row

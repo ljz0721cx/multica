@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Input } from "@multica/ui/components/ui/input";
 import { Textarea } from "@multica/ui/components/ui/textarea";
+import { Button } from "@multica/ui/components/ui/button";
 import { toast } from "sonner";
 import { useAuthStore } from "@multica/core/auth";
 import { api } from "@multica/core/api";
@@ -86,6 +87,40 @@ export function AccountTab() {
     enabled: !!user && !!profileName.trim() && !descriptionTooLong,
     isEqual: profilesEqual,
   });
+
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const hasPassword = user?.has_password === true;
+
+  const handleSavePassword = async () => {
+    if (!newPassword) return;
+    if (newPassword !== confirmPassword) {
+      toast.error(t(($) => $.account.toast_password_mismatch));
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      const updated = await api.changeOwnPassword({
+        current_password: hasPassword ? currentPassword : undefined,
+        new_password: newPassword,
+      });
+      setUser(updated);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      toast.success(t(($) => $.account.toast_password_saved));
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t(($) => $.account.toast_password_failed),
+      );
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
 
   return (
     <SettingsTab title={t(($) => $.page.tabs.profile)} scope="account">
@@ -182,6 +217,67 @@ export function AccountTab() {
                   })}
                 </p>
               ) : null}
+            </div>
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title={t(($) => $.account.section_password)}>
+        <SettingsCard>
+          {hasPassword ? (
+            <SettingsRow
+              label={t(($) => $.account.current_password_label)}
+              size="text"
+            >
+              <Input
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                placeholder={t(($) => $.account.password_placeholder)}
+              />
+            </SettingsRow>
+          ) : null}
+          <SettingsRow
+            label={t(($) => $.account.new_password_label)}
+            size="text"
+          >
+            <Input
+              type="password"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder={t(($) => $.account.password_placeholder)}
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={t(($) => $.account.confirm_password_label)}
+            size="text"
+          >
+            <div className="flex w-full flex-col gap-2 sm:items-end">
+              <Input
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder={t(($) => $.account.password_placeholder)}
+              />
+              <Button
+                type="button"
+                size="sm"
+                disabled={
+                  passwordSaving ||
+                  !newPassword ||
+                  !confirmPassword ||
+                  (hasPassword && !currentPassword)
+                }
+                aria-busy={passwordSaving || undefined}
+                onClick={() => void handleSavePassword()}
+              >
+                {passwordSaving
+                  ? t(($) => $.account.password_saving)
+                  : t(($) => $.account.password_save)}
+              </Button>
             </div>
           </SettingsRow>
         </SettingsCard>

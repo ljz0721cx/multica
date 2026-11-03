@@ -2944,6 +2944,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			slog.Warn("failed to unmarshal agent custom_env", "agent_id", uuidToString(agent.ID), "error", err)
 		}
 	}
+	// When the agent is bound to a server-managed model, inject the instance
+	// LLM gateway credentials so the daemon subprocess uses that catalog.
+	customEnv = h.injectServerLLMEnv(r.Context(), agent.Model.String, customEnv)
 	var customArgs []string
 	if agent.CustomArgs != nil {
 		if err := json.Unmarshal(agent.CustomArgs, &customArgs); err != nil {

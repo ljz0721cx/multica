@@ -77,6 +77,10 @@ export interface User {
   profile_description: string;
   /** Pinned IANA tz; null means "use browser-detected tz at render time". */
   timezone: string | null;
+  /** True when this account can sign in with email + password. */
+  has_password?: boolean;
+  /** True for instance admin (janle): model admin + create workspace/project. */
+  can_manage_instance?: boolean;
   created_at: string;
   updated_at: string;
 }

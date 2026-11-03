@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Cpu, Loader2, Plus, Check, Info } from "@multica/ui/icons";
-import { ChevronDown, Cpu, Loader2, Plus, Check, Info } from "lucide-react";
 import { api } from "@multica/core/api";
 import {
   refreshRuntimeModels,
@@ -103,14 +102,20 @@ export function ModelDropdown({
       ? modelsQuery.error.message.trim() || null
       : null;
 
+  const isServerModel = useMemo(
+    () => serverModels.some((m) => m.id === value),
+    [serverModels, value],
+  );
+
   // When the selected runtime reports it doesn't support per-agent
   // model selection, clear any previously-saved value so we don't
-  // persist a ghost configuration that never takes effect.
+  // persist a ghost configuration that never takes effect. Server
+  // catalog models still apply via claim-time gateway env injection.
   useEffect(() => {
-    if (!supported && value !== "") {
+    if (!supported && value !== "" && !isServerModel) {
       onAutomaticChange("");
     }
-  }, [supported, value, onAutomaticChange]);
+  }, [supported, value, isServerModel, onAutomaticChange]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return grouped;
@@ -155,7 +160,7 @@ export function ModelDropdown({
         ? t(($) => $.model_dropdown.default_provider)
         : t(($) => $.model_dropdown.runtime_offline_manual));
 
-  if (!supported && !modelsQuery.isLoading) {
+  if (!supported && !modelsQuery.isLoading && serverModels.length === 0) {
     return (
       <div className="flex flex-col min-w-0">
         <div className="flex h-6 items-center">

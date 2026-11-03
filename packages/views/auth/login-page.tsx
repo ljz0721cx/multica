@@ -104,7 +104,7 @@ export function LoginPage({
   const { t } = useT("auth");
   const qc = useQueryClient();
   const [step, setStep] = useState<"email" | "code" | "cli_confirm">("email");
-  const [loginMode, setLoginMode] = useState<"code" | "password">("code");
+  const [loginMode, setLoginMode] = useState<"code" | "password">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -456,9 +456,7 @@ export function LoginPage({
             {t(($) => $.signin.title)}
           </CardTitle>
           <CardDescription>
-            {loginMode === "password"
-              ? t(($) => $.signin.use_password)
-              : t(($) => $.signin.description)}
+            {t(($) => $.signin.description)}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

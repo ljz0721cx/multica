@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -322,7 +324,69 @@ func (h *Handler) GetModelAdminAccess(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	can := isModelAdmin(user)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"can_manage": isModelAdmin(user),
+		"can_manage":            can,
+		"can_create_workspace":  can,
+		"can_create_project":    can,
 	})
+}
+
+// injectServerLLMEnv overlays the instance LLM gateway credentials onto the
+// agent's claim-time custom_env when the agent's bound model is an enabled
+// server catalog entry. Agent-owned custom_env keys win so operators can still
+// override per agent.
+func (h *Handler) injectServerLLMEnv(ctx context.Context, modelID string, customEnv map[string]string) map[string]string {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return customEnv
+	}
+	m, err := h.Queries.GetLLMModelByModelID(ctx, modelID)
+	if err != nil || !m.Enabled {
+		return customEnv
+	}
+	cfg, err := h.Queries.GetLLMConfig(ctx, llmConfigID)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("server llm: load config failed", "model_id", modelID, "error", err)
+		}
+		return customEnv
+	}
+	apiKey := ""
+	if len(cfg.ApiKeyEncrypted) > 0 {
+		box, boxErr := llmSecretBox()
+		if boxErr != nil {
+			slog.Warn("server llm: secret box unavailable", "error", boxErr)
+			return customEnv
+		}
+		plain, openErr := box.Open(cfg.ApiKeyEncrypted)
+		if openErr != nil {
+			slog.Warn("server llm: decrypt api key failed", "error", openErr)
+			return customEnv
+		}
+		apiKey = strings.TrimSpace(string(plain))
+	}
+	baseURL := strings.TrimSpace(cfg.BaseUrl)
+	if baseURL == "" && apiKey == "" {
+		return customEnv
+	}
+	if customEnv == nil {
+		customEnv = map[string]string{}
+	}
+	setIfEmpty := func(key, value string) {
+		if value == "" {
+			return
+		}
+		if strings.TrimSpace(customEnv[key]) == "" {
+			customEnv[key] = value
+		}
+	}
+	// OpenAI-compatible gateways are the common self-host shape; set both
+	// OpenAI and Anthropic env names so Claude/Codex-style CLIs pick them up.
+	setIfEmpty("OPENAI_BASE_URL", baseURL)
+	setIfEmpty("OPENAI_API_BASE", baseURL)
+	setIfEmpty("ANTHROPIC_BASE_URL", baseURL)
+	setIfEmpty("OPENAI_API_KEY", apiKey)
+	setIfEmpty("ANTHROPIC_API_KEY", apiKey)
+	return customEnv
 }

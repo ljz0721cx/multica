@@ -17,6 +17,7 @@ import { useCreateWorkspace } from "@multica/core/workspace/mutations";
 import type { Workspace } from "@multica/core/types";
 import { isImeComposing } from "@multica/core/utils";
 import { matchLocale } from "@multica/core/i18n";
+import { useAuthStore } from "@multica/core/auth";
 import { useConfigStore } from "@multica/core/config";
 import { workspaceUrlHost } from "@multica/core/workspace/workspace-url";
 import { useLogout } from "../../auth";
@@ -101,13 +102,14 @@ export function StepWorkspace({
   const { t, i18n } = useT("onboarding");
   const locale = matchLocale([i18n.resolvedLanguage ?? i18n.language]);
   const workspaceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
+  const canManageInstance = useAuthStore((s) => s.user?.can_manage_instance === true);
   const urlHost = workspaceUrlHost(useConfigStore((s) => s.daemonAppUrl));
   // Single source of truth for "can the user reach the create path on this
   // instance?" — drives the resume-mode picker, the eyebrow/headline/lede
   // copy and the footer CTA so the disabled state can't
   // leak a clickable create affordance even if /api/config arrives late
-  // (#3433 review feedback).
-  const workspaceCreationAllowed = !workspaceCreationDisabled;
+  // (#3433 review feedback). Also gated to instance admin (janle).
+  const workspaceCreationAllowed = !workspaceCreationDisabled && canManageInstance;
   const logout = useLogout();
 
   const reusing = existing ?? null;

@@ -73,8 +73,13 @@ type UserResponse struct {
 	OnboardedAt             *string         `json:"onboarded_at"`
 	OnboardingQuestionnaire json.RawMessage `json:"onboarding_questionnaire"`
 	ProfileDescription      string          `json:"profile_description"`
-	CreatedAt               string          `json:"created_at"`
-	UpdatedAt               string          `json:"updated_at"`
+	// HasPassword is true when this account can sign in with email+password.
+	HasPassword bool `json:"has_password"`
+	// CanManageInstance gates janle-only surfaces: model admin, workspace
+	// creation, and project creation on this self-host deployment.
+	CanManageInstance bool   `json:"can_manage_instance"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
 }
 
 // MaxProfileDescriptionLen caps the user-supplied profile_description body.
@@ -83,7 +88,7 @@ type UserResponse struct {
 // doesn't move the needle on prompt cost.
 const MaxProfileDescriptionLen = 2000
 
-func (h *Handler) userToResponse(u db.User) UserResponse {
+func (h *Handler) userToResponse(ctx context.Context, u db.User) UserResponse {
 	// JSONB column is []byte with DEFAULT '{}', so it's never nil at the DB
 	// level. Defensive coalesce just in case a future ALTER makes the column
 	// nullable and some row comes back with no default applied.
@@ -91,6 +96,7 @@ func (h *Handler) userToResponse(u db.User) UserResponse {
 	if len(q) == 0 {
 		q = []byte("{}")
 	}
+	hasPassword, _ := h.Queries.UserHasPassword(ctx, u.ID)
 	return UserResponse{
 		ID:                      uuidToString(u.ID),
 		Name:                    u.Name,
@@ -101,6 +107,8 @@ func (h *Handler) userToResponse(u db.User) UserResponse {
 		OnboardedAt:             timestampToPtr(u.OnboardedAt),
 		OnboardingQuestionnaire: json.RawMessage(q),
 		ProfileDescription:      u.ProfileDescription,
+		HasPassword:             hasPassword,
+		CanManageInstance:       isModelAdmin(u),
 		CreatedAt:               timestampToString(u.CreatedAt),
 		UpdatedAt:               timestampToString(u.UpdatedAt),
 	}
@@ -477,7 +485,7 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 	slog.Info("user logged in", append(logger.RequestAttrs(r), "user_id", uuidToString(user.ID), "email", user.Email)...)
 	writeJSON(w, http.StatusOK, LoginResponse{
 		Token: tokenString,
-		User:  h.userToResponse(user),
+		User:  h.userToResponse(r.Context(), user),
 	})
 }
 
@@ -499,7 +507,7 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, h.userToResponse(user))
+	writeJSON(w, http.StatusOK, h.userToResponse(r.Context(), user))
 }
 
 type UpdateMeRequest struct {
@@ -739,7 +747,7 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	slog.Info("user logged in via google", append(logger.RequestAttrs(r), "user_id", uuidToString(user.ID), "email", user.Email)...)
 	writeJSON(w, http.StatusOK, LoginResponse{
 		Token: tokenString,
-		User:  h.userToResponse(user),
+		User:  h.userToResponse(r.Context(), user),
 	})
 }
 
@@ -863,5 +871,5 @@ func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, h.userToResponse(updatedUser))
+	writeJSON(w, http.StatusOK, h.userToResponse(r.Context(), updatedUser))
 }

@@ -21,6 +21,7 @@ import { useSidebarProjectPrefs, useUpdateSidebarProjectPrefs } from "@multica/c
 import { openCreateIssueWithPreference } from "@multica/core/issues/stores/create-mode-store";
 import { useSidebarKeptStore } from "@multica/core/issues/stores/sidebar-kept-store";
 import { useSidebarTreeStore, type SidebarIssueSettings } from "@multica/core/issues/stores/sidebar-tree-store";
+import { useAuthStore } from "@multica/core/auth";
 import { useModalStore } from "@multica/core/modals";
 import { useWorkspacePaths } from "@multica/core/paths";
 import type { Issue, ListIssuesResponse, Project } from "@multica/core/types";
@@ -104,6 +105,7 @@ export function ProjectsSection({
 }: ProjectsSectionProps) {
   const { t } = useT("layout");
   const p = useWorkspacePaths();
+  const canCreateProject = useAuthStore((s) => s.user?.can_manage_instance === true);
   const collapsed = useSidebarTreeStore((s) => s.projectsCollapsed);
   const setCollapsed = useSidebarTreeStore((s) => s.setProjectsCollapsed);
   const { projectSettings, issueSettings, projectOrder } = useSidebarProjectPrefs(wsId);
@@ -135,14 +137,16 @@ export function ProjectsSection({
       action={
         <>
           <ProjectsSectionSettings wsId={wsId} className="opacity-0 group-hover/section:opacity-100 group-focus-within/section:opacity-100 [@media(pointer:coarse)]:opacity-100" />
-          <IconButton
-            label={t(($) => $.panels.work.new_project)}
-            size="icon-xs"
-            className="text-muted-foreground"
-            onClick={() => useModalStore.getState().open("create-project")}
-          >
-            <Plus />
-          </IconButton>
+          {canCreateProject ? (
+            <IconButton
+              label={t(($) => $.panels.work.new_project)}
+              size="icon-xs"
+              className="text-muted-foreground"
+              onClick={() => useModalStore.getState().open("create-project")}
+            >
+              <Plus />
+            </IconButton>
+          ) : null}
         </>
       }
     >

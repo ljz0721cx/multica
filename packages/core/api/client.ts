@@ -25,6 +25,7 @@ import type {
   CreateMemberRequest,
   CreateMemberDirectRequest,
   SetMemberPasswordRequest,
+  ChangeOwnPasswordRequest,
   UpdateMemberRequest,
   LLMModel,
   LLMConfig,
@@ -1128,6 +1129,16 @@ export class ApiClient {
     });
     return parseWithFallback(raw, UserSchema, EMPTY_USER, {
       endpoint: "PATCH /api/me",
+    });
+  }
+
+  async changeOwnPassword(data: ChangeOwnPasswordRequest): Promise<User> {
+    const raw = await this.fetch<unknown>("/api/me/password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, UserSchema, EMPTY_USER, {
+      endpoint: "POST /api/me/password",
     });
   }
 

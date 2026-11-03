@@ -12,6 +12,7 @@ import {
   SquarePen,
   Zap,
 } from "@multica/ui/icons";
+import { useAuthStore } from "@multica/core/auth";
 import { useChatStore } from "@multica/core/chat";
 import type { CommandBarContext } from "@multica/core/command-bar";
 import { useArchiveAllReadInbox, useMarkAllInboxRead } from "@multica/core/inbox/mutations";
@@ -39,6 +40,7 @@ export function useGlobalCommands(contexts: readonly CommandBarContext[]): Palet
   const toggleChatShortcut = useShortcut("toggleChat");
   const markAllRead = useMarkAllInboxRead();
   const archiveAllRead = useArchiveAllReadInbox();
+  const canCreateProject = useAuthStore((s) => s.user?.can_manage_instance === true);
 
   const projectContext = contexts.find((c) => c.kind === "project");
   const projectId = projectContext?.kind === "project" ? projectContext.project.id : null;
@@ -48,7 +50,7 @@ export function useGlobalCommands(contexts: readonly CommandBarContext[]): Palet
 
   return useMemo<PaletteCommand[]>(() => {
     const chatPath = p.chat();
-    return [
+    const commands: PaletteCommand[] = [
       {
         id: "new-issue",
         label: t(($) => $.commands.new_issue),
@@ -76,13 +78,17 @@ export function useGlobalCommands(contexts: readonly CommandBarContext[]): Palet
         },
         primary: true,
       },
-      {
+    ];
+    if (canCreateProject) {
+      commands.push({
         id: "new-project",
         label: t(($) => $.commands.new_project),
         icon: FolderPlus,
         keywords: ["new", "project", "create", "add", "新建", "项目"],
         run: () => useModalStore.getState().open("create-project"),
-      },
+      });
+    }
+    commands.push(
       {
         id: "new-autopilot",
         label: t(($) => $.commands.new_autopilot),
@@ -142,9 +148,11 @@ export function useGlobalCommands(contexts: readonly CommandBarContext[]): Palet
         keywords: ["feedback", "bug", "report", "support", "反馈"],
         run: () => useModalStore.getState().open("feedback"),
       },
-    ];
+    );
+    return commands;
   }, [
     archiveAllRead,
+    canCreateProject,
     createIssueShortcut,
     inbox,
     markAllRead,

@@ -2732,6 +2732,8 @@ export const UserSchema = z.object({
   language: z.string().nullable().default(null),
   profile_description: z.string().default(""),
   timezone: z.string().nullable().default(null),
+  has_password: z.boolean().optional().default(false),
+  can_manage_instance: z.boolean().optional().default(false),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
 }).loose();
@@ -2746,6 +2748,8 @@ export const EMPTY_USER: User = {
   language: null,
   profile_description: "",
   timezone: null,
+  has_password: false,
+  can_manage_instance: false,
   created_at: "",
   updated_at: "",
 };
@@ -3855,10 +3859,14 @@ export const EMPTY_LLM_CONFIG: LLMConfig = {
 
 export const ModelAdminAccessSchema = z.object({
   can_manage: z.boolean().optional().default(false),
+  can_create_workspace: z.boolean().optional().default(false),
+  can_create_project: z.boolean().optional().default(false),
 }).loose();
 
 export const EMPTY_MODEL_ADMIN_ACCESS: ModelAdminAccess = {
   can_manage: false,
+  can_create_workspace: false,
+  can_create_project: false,
 };
 
 export const WakeupConditionSchema = z.union([

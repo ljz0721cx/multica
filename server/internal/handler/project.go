@@ -278,6 +278,15 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	creator, err := h.Queries.GetUser(r.Context(), parseUUID(userID))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	if !isModelAdmin(creator) {
+		writeError(w, http.StatusForbidden, "project creation is restricted to admin janle")
+		return
+	}
 	status := req.Status
 	if status == "" {
 		status = "planned"

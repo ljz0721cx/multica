@@ -216,19 +216,24 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user, err := h.Queries.GetUser(r.Context(), parseUUID(userID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusUnauthorized, "user not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	// Instance admin (janle): only this operator may create workspaces.
+	if !isModelAdmin(user) {
+		writeError(w, http.StatusForbidden, "workspace creation is restricted to admin janle")
+		return
+	}
 	// Self-host allowlist (#9400): when WORKSPACE_CREATION_ALLOWED_EMAILS is
 	// set, only those accounts may create workspaces. The UI does not hide
 	// the entry points for other users; this 403 is the enforcement point.
 	if len(h.cfg.WorkspaceCreationAllowedEmails) > 0 {
-		user, err := h.Queries.GetUser(r.Context(), parseUUID(userID))
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				writeError(w, http.StatusUnauthorized, "user not found")
-				return
-			}
-			writeError(w, http.StatusInternalServerError, "failed to load user")
-			return
-		}
 		if !contains(h.cfg.WorkspaceCreationAllowedEmails, strings.TrimSpace(user.Email)) {
 			writeError(w, http.StatusForbidden, "workspace creation is restricted to selected users on this instance")
 			return

@@ -482,6 +482,7 @@ export function ProjectsPage() {
   const wsId = useWorkspaceId();
   const wsPaths = useWorkspacePaths();
   const currentUser = useAuthStore((s) => s.user);
+  const canCreateProject = currentUser?.can_manage_instance === true;
   const { getActorName } = useActorName();
 
   const viewMode = useProjectViewStore((s) => s.viewMode);
@@ -837,10 +838,12 @@ export function ProjectsPage() {
                 </div>
               }
             />
-            <CollectionCreateButton
-              label={t(($) => $.page.new_project)}
-              onClick={openCreateProject}
-            />
+            {canCreateProject ? (
+              <CollectionCreateButton
+                label={t(($) => $.page.new_project)}
+                onClick={openCreateProject}
+              />
+            ) : null}
           </>
         }
       />
@@ -850,9 +853,11 @@ export function ProjectsPage() {
           icon={FolderKanban}
           title={t(($) => $.page.empty)}
           actions={
-            <Button size="sm" variant="outline" onClick={openCreateProject}>
-              {t(($) => $.page.create_first)}
-            </Button>
+            canCreateProject ? (
+              <Button size="sm" variant="outline" onClick={openCreateProject}>
+                {t(($) => $.page.create_first)}
+              </Button>
+            ) : null
           }
         />
       ) : (

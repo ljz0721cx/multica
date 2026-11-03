@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/logger"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 type PasswordLoginRequest struct {
@@ -87,6 +88,67 @@ func (h *Handler) LoginWithPassword(w http.ResponseWriter, r *http.Request) {
 	slog.Info("user logged in with password", append(logger.RequestAttrs(r), "user_id", uuidToString(user.ID), "email", user.Email)...)
 	writeJSON(w, http.StatusOK, LoginResponse{
 		Token: tokenString,
-		User:  h.userToResponse(user),
+		User:  h.userToResponse(r.Context(), user),
 	})
+}
+
+type ChangeOwnPasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// ChangeOwnPassword lets a signed-in user set or rotate their own login password.
+func (h *Handler) ChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	user, err := h.Queries.GetUser(r.Context(), parseUUID(userID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+
+	var req ChangeOwnPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := auth.ValidatePasswordStrength(req.NewPassword); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	stored, err := h.Queries.GetUserPassword(r.Context(), user.ID)
+	hasPassword := err == nil
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusInternalServerError, "failed to look up password")
+		return
+	}
+	if hasPassword {
+		ok, checkErr := auth.CheckPassword(req.CurrentPassword, stored.PasswordHash)
+		if checkErr != nil || !ok {
+			writeError(w, http.StatusUnauthorized, "current password is incorrect")
+			return
+		}
+	}
+
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, err := h.Queries.UpsertUserPassword(r.Context(), db.UpsertUserPasswordParams{
+		UserID:       user.ID,
+		PasswordHash: hash,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to set password")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, h.userToResponse(r.Context(), user))
 }

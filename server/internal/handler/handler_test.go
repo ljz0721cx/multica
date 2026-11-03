@@ -42,6 +42,12 @@ const (
 )
 
 func TestMain(m *testing.M) {
+	// Instance-admin create gates (workspace/project) reuse isModelAdmin.
+	// Seed the allowlist so fixture users can still exercise create paths;
+	// tests that assert the janle restriction clear this with t.Setenv.
+	if os.Getenv("MULTICA_MODEL_ADMIN_EMAILS") == "" {
+		_ = os.Setenv("MULTICA_MODEL_ADMIN_EMAILS", handlerTestEmail)
+	}
 	ctx := context.Background()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {

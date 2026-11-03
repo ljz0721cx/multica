@@ -733,6 +733,13 @@ export interface UpdateLLMModelRequest {
 
 export interface ModelAdminAccess {
   can_manage: boolean;
+  can_create_workspace?: boolean;
+  can_create_project?: boolean;
+}
+
+export interface ChangeOwnPasswordRequest {
+  current_password?: string;
+  new_password: string;
 }
 
 // Personal Access Tokens

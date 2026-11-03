@@ -4,6 +4,7 @@ import { useMemo, useState, type MouseEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppWindow, ArrowBigUp, Check, Plus } from "@multica/ui/icons";
 import { api } from "@multica/core/api";
+import { useAuthStore } from "@multica/core/auth";
 import { useConfigStore } from "@multica/core/config";
 import {
   inboxUnreadSummaryEnabled,
@@ -184,6 +185,7 @@ export function RailWorkspaces() {
   const workspace = useCurrentWorkspace();
   const wsId = workspace?.id;
   const workspaceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
+  const canCreateWorkspace = useAuthStore((s) => s.user?.can_manage_instance === true);
   const { data: workspaces = EMPTY_WORKSPACES } = useQuery(workspaceListOptions());
   const { data: invitations = EMPTY_INVITATIONS } = useQuery(myInvitationListOptions());
   // One cross-workspace cache entry; gated on an active workspace since the
@@ -278,7 +280,7 @@ export function RailWorkspaces() {
             </DropdownMenuGroup>
           </>
         )}
-        {!workspaceCreationDisabled && (
+        {!workspaceCreationDisabled && canCreateWorkspace && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>

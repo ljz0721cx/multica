@@ -645,7 +645,17 @@
     "save": "更新资料",
     "saving": "更新中...",
     "toast_avatar_failed": "上传头像失败",
-    "toast_profile_failed": "更新资料失败"
+    "toast_profile_failed": "更新资料失败",
+    "section_password": "登录密码",
+    "current_password_label": "当前密码",
+    "new_password_label": "新密码",
+    "confirm_password_label": "确认新密码",
+    "password_placeholder": "至少 8 位",
+    "password_save": "更新密码",
+    "password_saving": "更新中...",
+    "toast_password_saved": "密码已更新",
+    "toast_password_failed": "更新密码失败",
+    "toast_password_mismatch": "两次输入的新密码不一致"
   },
   "notifications": {
     "title": "通知去向",
