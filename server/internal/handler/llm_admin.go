@@ -506,6 +506,7 @@ func fetchGatewayModelIDs(ctx context.Context, baseURL, apiKey string) ([]string
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Multica/1.0")
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
@@ -520,6 +521,10 @@ func fetchGatewayModelIDs(ctx context.Context, baseURL, apiKey string) ([]string
 		return nil, fmt.Errorf("read gateway response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		ct := strings.ToLower(resp.Header.Get("Content-Type"))
+		if strings.Contains(ct, "text/html") || strings.HasPrefix(strings.TrimSpace(string(body)), "<!DOCTYPE") || strings.HasPrefix(strings.TrimSpace(string(body)), "<html") {
+			return nil, fmt.Errorf("gateway returned %d HTML (check base URL points to the API host, e.g. https://…/v1 — not a website front page)", resp.StatusCode)
+		}
 		msg := strings.TrimSpace(string(body))
 		if len(msg) > 240 {
 			msg = msg[:240] + "…"
