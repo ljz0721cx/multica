@@ -7,6 +7,7 @@ import {
   Blocks,
   CircleDot,
   CreditCard,
+  Cpu,
   FolderGit2,
   Keyboard,
   KeyRound,
@@ -27,6 +28,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useAuthStore } from "@multica/core/auth";
+import { api } from "@multica/core/api";
 import { useCurrentWorkspace } from "@multica/core/paths";
 import { useFeatureEnabled } from "@multica/core/config";
 import { useCurrentMember } from "@multica/core/permissions";
@@ -58,6 +60,7 @@ import { QuickActionsTab } from "./quick-actions-tab";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 import { PluginsTab } from "./plugins-tab";
 import { McpTab } from "./mcp-tab";
+import { ModelsTab } from "./models-tab";
 import { BillingTab } from "./billing-tab";
 import { SETTINGS_ANCHOR_ATTR } from "./settings-layout";
 import { searchSettings } from "./settings-search";
@@ -119,6 +122,23 @@ export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
     false,
   );
   const appsAvailable = useComposioAvailable();
+  // Instance-wide model admin (janle), not workspace admin — hide the tab
+  // entirely when the user cannot manage, so other admins never see it.
+  const [canManageModels, setCanManageModels] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getModelAdminAccess()
+      .then((access) => {
+        if (!cancelled) setCanManageModels(access.can_manage === true);
+      })
+      .catch(() => {
+        if (!cancelled) setCanManageModels(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
   const entry = (
     value: string,
     label: string,
@@ -167,6 +187,16 @@ export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
               ? [entry("apps", t(($) => $.page.tabs.apps), Plug, <ConnectedAppsTab />)]
               : []),
             entry("tokens", t(($) => $.page.tabs.tokens), KeyRound, <TokensTab />),
+            ...(canManageModels
+              ? [
+                  entry(
+                    "models",
+                    t(($) => $.page.tabs.models),
+                    Cpu,
+                    <ModelsTab />,
+                  ),
+                ]
+              : []),
           ],
         },
       ],

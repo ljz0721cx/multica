@@ -4,16 +4,19 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import {
   Copy,
   Crown,
+  KeyRound,
   Link,
   Loader2,
   Mail,
   MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   Shield,
   Trash2,
   User,
   UserMinus,
+  UserPlus,
   X,
 } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -174,6 +177,8 @@ function MemberRow({
   isSelf,
   busy,
   onRoleChange,
+  onEditRemark,
+  onSetPassword,
   onRemove,
 }: {
   member: MemberWithUser;
@@ -185,6 +190,8 @@ function MemberRow({
   isSelf: boolean;
   busy: boolean;
   onRoleChange: (role: MemberRole) => void;
+  onEditRemark: () => void;
+  onSetPassword: () => void;
   onRemove: () => void;
 }) {
   const { t } = useT("settings");
@@ -194,8 +201,9 @@ function MemberRow({
   const RoleIcon = rc.icon;
   const canEditRole = canManage && !isSelf && (member.role !== "owner" || canManageOwners);
   const canRemove = canManage && !isSelf && (member.role !== "owner" || canManageOwners);
+  const canEditMemberMeta = canManage && !isSelf;
   const isLastOwner = member.role === "owner" && ownerCount <= 1;
-  const showMenu = canEditRole || canRemove;
+  const showMenu = canEditRole || canRemove || canEditMemberMeta;
 
   return (
     <div className="flex items-center gap-3 px-4 py-3">
@@ -210,6 +218,11 @@ function MemberRow({
           ) : null}
         </div>
         <div className="truncate text-caption text-muted-foreground">{member.email}</div>
+        {member.remark ? (
+          <div className="truncate text-caption text-muted-foreground">
+            {t(($) => $.members.remark_prefix, { remark: member.remark })}
+          </div>
+        ) : null}
       </div>
       <span className="hidden w-32 shrink-0 text-caption tabular-nums text-muted-foreground md:block">
         {t(($) => $.members.joined, {
@@ -281,7 +294,21 @@ function MemberRow({
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
             )}
-            {canEditRole && canRemove && <DropdownMenuSeparator />}
+            {canEditMemberMeta && (
+              <DropdownMenuItem onClick={onEditRemark}>
+                <Pencil className="h-3.5 w-3.5" />
+                {t(($) => $.members.edit_remark)}
+              </DropdownMenuItem>
+            )}
+            {canEditMemberMeta && (
+              <DropdownMenuItem onClick={onSetPassword}>
+                <KeyRound className="h-3.5 w-3.5" />
+                {member.has_password
+                  ? t(($) => $.members.reset_password)
+                  : t(($) => $.members.set_password)}
+              </DropdownMenuItem>
+            )}
+            {(canEditRole || canEditMemberMeta) && canRemove && <DropdownMenuSeparator />}
             {canRemove && (
               <DropdownMenuItem variant="destructive" onClick={onRemove}>
                 <UserMinus className="h-3.5 w-3.5" />
@@ -417,6 +444,19 @@ export function MembersTab() {
   const { data: invitations = [] } = useQuery(invitationListOptions(wsId));
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createEmail, setCreateEmail] = useState("");
+  const [createName, setCreateName] = useState("");
+  const [createRemark, setCreateRemark] = useState("");
+  const [createPassword, setCreatePassword] = useState("");
+  const [createRole, setCreateRole] = useState<MemberRole>("member");
+  const [createLoading, setCreateLoading] = useState(false);
+  const [remarkMember, setRemarkMember] = useState<MemberWithUser | null>(null);
+  const [remarkDraft, setRemarkDraft] = useState("");
+  const [remarkLoading, setRemarkLoading] = useState(false);
+  const [passwordMember, setPasswordMember] = useState<MemberWithUser | null>(null);
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
   const [shareLinkOpen, setShareLinkOpen] = useState(false);
   const requestedView = resolveSettingsLocation(
     navigation?.searchParams ?? new URLSearchParams(),
@@ -488,7 +528,8 @@ export function MembersTab() {
     ? members.filter(
         (m) =>
           m.name.toLocaleLowerCase().includes(needle) ||
-          m.email.toLocaleLowerCase().includes(needle),
+          m.email.toLocaleLowerCase().includes(needle) ||
+          (m.remark ?? "").toLocaleLowerCase().includes(needle),
       )
     : members;
 
@@ -792,6 +833,73 @@ export function MembersTab() {
     }
   };
 
+  const handleCreateMember = async () => {
+    if (!workspace || !createEmail.trim()) return;
+    setCreateLoading(true);
+    try {
+      await api.createMemberDirect(workspace.id, {
+        email: createEmail.trim(),
+        name: createName.trim() || undefined,
+        remark: createRemark.trim() || undefined,
+        password: createPassword || undefined,
+        role: createRole,
+      });
+      qc.invalidateQueries({ queryKey: workspaceKeys.members(wsId) });
+      setCreateOpen(false);
+      setCreateEmail("");
+      setCreateName("");
+      setCreateRemark("");
+      setCreatePassword("");
+      setCreateRole("member");
+      toast.success(t(($) => $.members.toast_member_created));
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : t(($) => $.members.toast_member_create_failed),
+      );
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const handleSaveRemark = async () => {
+    if (!workspace || !remarkMember) return;
+    setRemarkLoading(true);
+    try {
+      await api.updateMember(workspace.id, remarkMember.id, {
+        remark: remarkDraft.trim(),
+      });
+      qc.invalidateQueries({ queryKey: workspaceKeys.members(wsId) });
+      setRemarkMember(null);
+      toast.success(t(($) => $.members.toast_remark_updated));
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : t(($) => $.members.toast_remark_failed),
+      );
+    } finally {
+      setRemarkLoading(false);
+    }
+  };
+
+  const handleSavePassword = async () => {
+    if (!workspace || !passwordMember || !passwordDraft) return;
+    setPasswordLoading(true);
+    try {
+      await api.setMemberPassword(workspace.id, passwordMember.id, {
+        password: passwordDraft,
+      });
+      qc.invalidateQueries({ queryKey: workspaceKeys.members(wsId) });
+      setPasswordMember(null);
+      setPasswordDraft("");
+      toast.success(t(($) => $.members.toast_password_set));
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : t(($) => $.members.toast_password_failed),
+      );
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
   const handleRemoveMember = (member: MemberWithUser) => {
     if (!workspace) return;
     setConfirmAction({
@@ -893,10 +1001,16 @@ export function MembersTab() {
       scope="workspace"
       actions={
         canManageWorkspace ? (
-          <Button onClick={() => setInviteOpen(true)}>
-            <Plus />
-            {t(($) => $.members.invite_title)}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setCreateOpen(true)}>
+              <UserPlus />
+              {t(($) => $.members.create_title)}
+            </Button>
+            <Button onClick={() => setInviteOpen(true)}>
+              <Plus />
+              {t(($) => $.members.invite_title)}
+            </Button>
+          </div>
         ) : undefined
       }
     >
@@ -968,6 +1082,14 @@ export function MembersTab() {
                     isSelf={m.user_id === user?.id}
                     busy={memberActionId === m.id}
                     onRoleChange={(role) => handleRoleChange(m.id, role)}
+                    onEditRemark={() => {
+                      setRemarkMember(m);
+                      setRemarkDraft(m.remark ?? "");
+                    }}
+                    onSetPassword={() => {
+                      setPasswordMember(m);
+                      setPasswordDraft("");
+                    }}
                     onRemove={() => handleRemoveMember(m)}
                   />
                 </div>
@@ -1012,6 +1134,222 @@ export function MembersTab() {
           <EmptyList>{t(($) => $.members.no_share_links)}</EmptyList>
         )}
       </section>
+
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          if (!open && !createLoading) setCreateOpen(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t(($) => $.members.create_title)}</DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (createEmail.trim()) void handleCreateMember();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="create-member-email">{t(($) => $.members.email_label)}</Label>
+              <Input
+                id="create-member-email"
+                type="email"
+                autoComplete="off"
+                spellCheck={false}
+                value={createEmail}
+                onChange={(e) => setCreateEmail(e.target.value)}
+                placeholder={t(($) => $.members.invite_email_placeholder)}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="create-member-remark">{t(($) => $.members.remark_label)}</Label>
+              <Input
+                id="create-member-remark"
+                value={createRemark}
+                onChange={(e) => setCreateRemark(e.target.value)}
+                placeholder={t(($) => $.members.remark_placeholder)}
+                maxLength={100}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="create-member-name">{t(($) => $.members.name_label)}</Label>
+              <Input
+                id="create-member-name"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                placeholder={t(($) => $.members.name_placeholder)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="create-member-password">{t(($) => $.members.password_label)}</Label>
+              <Input
+                id="create-member-password"
+                type="password"
+                autoComplete="new-password"
+                value={createPassword}
+                onChange={(e) => setCreatePassword(e.target.value)}
+                placeholder={t(($) => $.members.password_placeholder)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="create-member-role">{t(($) => $.members.role_label)}</Label>
+              <Select
+                items={roleItems}
+                value={createRole}
+                onValueChange={(value) => setCreateRole(value as MemberRole)}
+              >
+                <SelectTrigger id="create-member-role" className="w-full">
+                  <SelectValue>{() => roleConfig[createRole].label}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {roleItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      <span className="flex flex-col">
+                        <span>{item.label}</span>
+                        <span className="text-caption text-muted-foreground">
+                          {roleConfig[item.value].description}
+                        </span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreateOpen(false)}
+                disabled={createLoading}
+              >
+                {t(($) => $.members.confirm_cancel)}
+              </Button>
+              <Button
+                type="submit"
+                disabled={createLoading || !createEmail.trim()}
+                aria-busy={createLoading || undefined}
+              >
+                {createLoading
+                  ? t(($) => $.members.creating)
+                  : t(($) => $.members.create_button)}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!remarkMember}
+        onOpenChange={(open) => {
+          if (!open && !remarkLoading) setRemarkMember(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t(($) => $.members.edit_remark)}</DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleSaveRemark();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="member-remark">{t(($) => $.members.remark_label)}</Label>
+              <Input
+                id="member-remark"
+                value={remarkDraft}
+                onChange={(e) => setRemarkDraft(e.target.value)}
+                placeholder={t(($) => $.members.remark_placeholder)}
+                maxLength={100}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRemarkMember(null)}
+                disabled={remarkLoading}
+              >
+                {t(($) => $.members.confirm_cancel)}
+              </Button>
+              <Button type="submit" disabled={remarkLoading} aria-busy={remarkLoading || undefined}>
+                {remarkLoading
+                  ? t(($) => $.members.saving)
+                  : t(($) => $.members.save_button)}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!passwordMember}
+        onOpenChange={(open) => {
+          if (!open && !passwordLoading) {
+            setPasswordMember(null);
+            setPasswordDraft("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {passwordMember?.has_password
+                ? t(($) => $.members.reset_password)
+                : t(($) => $.members.set_password)}
+            </DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (passwordDraft) void handleSavePassword();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="member-password">{t(($) => $.members.password_label)}</Label>
+              <Input
+                id="member-password"
+                type="password"
+                autoComplete="new-password"
+                value={passwordDraft}
+                onChange={(e) => setPasswordDraft(e.target.value)}
+                placeholder={t(($) => $.members.password_placeholder)}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setPasswordMember(null);
+                  setPasswordDraft("");
+                }}
+                disabled={passwordLoading}
+              >
+                {t(($) => $.members.confirm_cancel)}
+              </Button>
+              <Button
+                type="submit"
+                disabled={passwordLoading || !passwordDraft}
+                aria-busy={passwordLoading || undefined}
+              >
+                {passwordLoading
+                  ? t(($) => $.members.saving)
+                  : t(($) => $.members.save_button)}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={inviteOpen}

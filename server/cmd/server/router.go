@@ -1512,6 +1512,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	contactSalesRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_CONTACT_SALES", 5), time.Hour, trustedProxies)
 	r.With(authRL).Post("/auth/send-code", h.SendCode)
 	r.With(authVerifyRL).Post("/auth/verify-code", h.VerifyCode)
+	r.With(authRL).Post("/auth/login", h.LoginWithPassword)
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
 	r.Post("/auth/logout", h.Logout)
 
@@ -1661,6 +1662,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/me/onboarding/complete", h.CompleteOnboarding)
 		r.Post("/api/me/onboarding/cloud-waitlist", h.JoinCloudWaitlist)
 		r.Post("/api/cli-token", h.IssueCliToken)
+		// Server-managed LLM catalog (AK/SK + available models). Write paths
+		// are restricted to model admin "janle"; enabled models are readable
+		// by any authenticated user so agents can pick a server model.
+		r.Get("/api/llm/models", h.ListEnabledLLMModels)
+		r.Get("/api/llm/admin/access", h.GetModelAdminAccess)
+		r.Get("/api/llm/admin/config", h.GetLLMConfigAdmin)
+		r.Put("/api/llm/admin/config", h.UpsertLLMConfigAdmin)
+		r.Get("/api/llm/admin/models", h.ListLLMModelsAdmin)
+		r.Post("/api/llm/admin/models", h.CreateLLMModelAdmin)
+		r.Patch("/api/llm/admin/models/{modelId}", h.UpdateLLMModelAdmin)
+		r.Delete("/api/llm/admin/models/{modelId}", h.DeleteLLMModelAdmin)
 		// Sliding session renewal for clients that hold the session as a
 		// string (Desktop, mobile). Browsers get theirs re-issued inline by
 		// middleware.Auth and never call this (MUL-7436).
@@ -1738,9 +1750,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/", h.UpdateWorkspace)
 					r.Patch("/", h.UpdateWorkspace)
 					r.Post("/members", h.CreateInvitation)
+					r.Post("/members/direct", h.CreateMemberDirect)
 					r.Route("/members/{memberId}", func(r chi.Router) {
 						r.Patch("/", h.UpdateMember)
 						r.Delete("/", h.DeleteMember)
+						r.Post("/password", h.SetMemberPassword)
 					})
 					r.Delete("/invitations/{invitationId}", h.RevokeInvitation)
 					// Curating the shared MCP library is an admin action.

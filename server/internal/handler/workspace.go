@@ -280,6 +280,7 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID: ws.ID,
 		UserID:      parseUUID(userID),
 		Role:        "owner",
+		Remark:      "",
 	})
 	if err != nil {
 		slog.Warn("add owner failed", append(logger.RequestAttrs(r), "error", err)...)
@@ -504,6 +505,8 @@ type MemberWithUserResponse struct {
 	WorkspaceID string  `json:"workspace_id"`
 	UserID      string  `json:"user_id"`
 	Role        string  `json:"role"`
+	Remark      string  `json:"remark"`
+	HasPassword bool    `json:"has_password"`
 	CreatedAt   string  `json:"created_at"`
 	Name        string  `json:"name"`
 	Email       string  `json:"email"`
@@ -530,6 +533,8 @@ func (h *Handler) ListMembersWithUser(w http.ResponseWriter, r *http.Request) {
 			WorkspaceID: uuidToString(m.WorkspaceID),
 			UserID:      uuidToString(m.UserID),
 			Role:        m.Role,
+			Remark:      m.Remark,
+			HasPassword: m.HasPassword,
 			CreatedAt:   timestampToString(m.CreatedAt),
 			Name:        m.UserName,
 			Email:       m.UserEmail,
@@ -545,12 +550,15 @@ type CreateMemberRequest struct {
 	Role  string `json:"role"`
 }
 
-func (h *Handler) memberWithUserResponse(member db.Member, user db.User) MemberWithUserResponse {
+func (h *Handler) memberWithUserResponse(ctx context.Context, member db.Member, user db.User) MemberWithUserResponse {
+	hasPassword, _ := h.Queries.UserHasPassword(ctx, user.ID)
 	return MemberWithUserResponse{
 		ID:          uuidToString(member.ID),
 		WorkspaceID: uuidToString(member.WorkspaceID),
 		UserID:      uuidToString(member.UserID),
 		Role:        member.Role,
+		Remark:      member.Remark,
+		HasPassword: hasPassword,
 		CreatedAt:   timestampToString(member.CreatedAt),
 		Name:        user.Name,
 		Email:       user.Email,
@@ -573,7 +581,8 @@ func normalizeMemberRole(role string) (string, bool) {
 }
 
 type UpdateMemberRequest struct {
-	Role string `json:"role"`
+	Role   *string `json:"role"`
+	Remark *string `json:"remark"`
 }
 
 func (h *Handler) UpdateMember(w http.ResponseWriter, r *http.Request) {
@@ -599,44 +608,70 @@ func (h *Handler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if strings.TrimSpace(req.Role) == "" {
-		writeError(w, http.StatusBadRequest, "role is required")
+	if req.Role == nil && req.Remark == nil {
+		writeError(w, http.StatusBadRequest, "role or remark is required")
 		return
 	}
 
-	role, valid := normalizeMemberRole(req.Role)
-	if !valid {
-		writeError(w, http.StatusBadRequest, "invalid member role")
-		return
-	}
+	updatedMember := target
+	if req.Role != nil {
+		if requester.Role != "owner" && requester.Role != "admin" {
+			writeError(w, http.StatusForbidden, "insufficient permissions")
+			return
+		}
+		role, valid := normalizeMemberRole(*req.Role)
+		if !valid {
+			writeError(w, http.StatusBadRequest, "invalid member role")
+			return
+		}
 
-	if (target.Role == "owner" || role == "owner") && requester.Role != "owner" {
-		writeError(w, http.StatusForbidden, "insufficient permissions")
-		return
-	}
+		if (target.Role == "owner" || role == "owner") && requester.Role != "owner" {
+			writeError(w, http.StatusForbidden, "insufficient permissions")
+			return
+		}
 
-	if target.Role == "owner" && role != "owner" {
-		members, err := h.Queries.ListMembers(r.Context(), target.WorkspaceID)
+		if target.Role == "owner" && role != "owner" {
+			members, err := h.Queries.ListMembers(r.Context(), target.WorkspaceID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to update member")
+				return
+			}
+			if countOwners(members) <= 1 {
+				writeError(w, http.StatusBadRequest, "workspace must have at least one owner")
+				return
+			}
+		}
+
+		updatedMember, err = h.Queries.UpdateMemberRole(r.Context(), db.UpdateMemberRoleParams{
+			ID:   target.ID,
+			Role: role,
+		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update member")
 			return
 		}
-		if countOwners(members) <= 1 {
-			writeError(w, http.StatusBadRequest, "workspace must have at least one owner")
+		h.MembershipCache.Invalidate(r.Context(), uuidToString(target.UserID), workspaceID)
+	}
+
+	if req.Remark != nil {
+		if requester.Role != "owner" && requester.Role != "admin" {
+			writeError(w, http.StatusForbidden, "insufficient permissions")
+			return
+		}
+		remark := strings.TrimSpace(*req.Remark)
+		if utf8RuneCount(remark) > 100 {
+			writeError(w, http.StatusBadRequest, "remark must be at most 100 characters")
+			return
+		}
+		updatedMember, err = h.Queries.UpdateMemberRemark(r.Context(), db.UpdateMemberRemarkParams{
+			ID:     target.ID,
+			Remark: remark,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update member remark")
 			return
 		}
 	}
-
-	updatedMember, err := h.Queries.UpdateMemberRole(r.Context(), db.UpdateMemberRoleParams{
-		ID:   target.ID,
-		Role: role,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update member")
-		return
-	}
-
-	h.MembershipCache.Invalidate(r.Context(), uuidToString(target.UserID), workspaceID)
 
 	user, err := h.Queries.GetUser(r.Context(), updatedMember.UserID)
 	if err != nil {
@@ -645,11 +680,12 @@ func (h *Handler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := requestUserID(r)
+	resp := h.memberWithUserResponse(r.Context(), updatedMember, user)
 	h.publish(protocol.EventMemberUpdated, uuidToString(requester.WorkspaceID), "member", userID, map[string]any{
-		"member": h.memberWithUserResponse(updatedMember, user),
+		"member": resp,
 	})
 
-	writeJSON(w, http.StatusOK, h.memberWithUserResponse(updatedMember, user))
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) DeleteMember(w http.ResponseWriter, r *http.Request) {

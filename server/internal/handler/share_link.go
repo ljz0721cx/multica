@@ -378,6 +378,7 @@ func (h *Handler) JoinByShareLink(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID: link.WorkspaceID,
 		UserID:      user.ID,
 		Role:        link.Role,
+		Remark:      "",
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -435,7 +436,7 @@ func (h *Handler) JoinByShareLink(w http.ResponseWriter, r *http.Request) {
 		wsSlug = ws.Slug
 	}
 
-	memberResp := h.memberWithUserResponse(member, user)
+	memberResp := h.memberWithUserResponse(r.Context(), member, user)
 	h.publish(protocol.EventMemberAdded, wsID, "member", userID, map[string]any{
 		"member": memberResp,
 	})

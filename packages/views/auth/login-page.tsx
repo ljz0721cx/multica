@@ -104,7 +104,9 @@ export function LoginPage({
   const { t } = useT("auth");
   const qc = useQueryClient();
   const [step, setStep] = useState<"email" | "code" | "cli_confirm">("email");
+  const [loginMode, setLoginMode] = useState<"code" | "password">("code");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -194,6 +196,49 @@ export function LoginPage({
     [email, t],
   );
 
+  const finishLogin = useCallback(async () => {
+    const wsList = await api.listWorkspaces();
+    qc.setQueryData(workspaceKeys.list(), wsList);
+    onTokenObtained?.();
+    onSuccess();
+  }, [onSuccess, onTokenObtained, qc]);
+
+  const handlePasswordLogin = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      if (!email) {
+        setError(t(($) => $.common.email_required));
+        return;
+      }
+      if (!password) {
+        setError(t(($) => $.signin.password_required));
+        return;
+      }
+      setLoading(true);
+      setError("");
+      try {
+        if (cliCallback) {
+          const { token } = await api.loginWithPassword(email, password);
+          localStorage.setItem("multica_token", token);
+          api.setToken(token);
+          onTokenObtained?.();
+          redirectToCliCallback(cliCallback.url, token, cliCallback.state);
+          return;
+        }
+        await useAuthStore.getState().loginWithPassword(email, password);
+        await finishLogin();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : t(($) => $.errors.code_invalid),
+        );
+        setLoading(false);
+      }
+    },
+    [email, password, cliCallback, onTokenObtained, finishLogin, t],
+  );
+
   const handleVerify = useCallback(
     async (value: string) => {
       if (value.length !== 6) return;
@@ -215,10 +260,7 @@ export function LoginPage({
         // URL (first workspace's slug, or /workspaces/new for zero-workspace
         // users).
         await useAuthStore.getState().verifyCode(email, value);
-        const wsList = await api.listWorkspaces();
-        qc.setQueryData(workspaceKeys.list(), wsList);
-        onTokenObtained?.();
-        onSuccess();
+        await finishLogin();
       } catch (err) {
         setError(
           err instanceof Error
@@ -229,7 +271,7 @@ export function LoginPage({
         setLoading(false);
       }
     },
-    [email, onSuccess, cliCallback, onTokenObtained, qc, t],
+    [email, cliCallback, onTokenObtained, finishLogin, t],
   );
 
   const handleResend = async () => {
@@ -414,7 +456,9 @@ export function LoginPage({
             {t(($) => $.signin.title)}
           </CardTitle>
           <CardDescription>
-            {t(($) => $.signin.description)}
+            {loginMode === "password"
+              ? t(($) => $.signin.use_password)
+              : t(($) => $.signin.description)}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -425,7 +469,11 @@ export function LoginPage({
               </AlertDescription>
             </Alert>
           )}
-          <form id="login-form" onSubmit={handleSendCode} className="space-y-4">
+          <form
+            id="login-form"
+            onSubmit={loginMode === "password" ? handlePasswordLogin : handleSendCode}
+            className="space-y-4"
+          >
             <div className="space-y-2">
               <Label htmlFor="login-email">{t(($) => $.common.email)}</Label>
               <Input
@@ -438,6 +486,20 @@ export function LoginPage({
                 required
               />
             </div>
+            {loginMode === "password" ? (
+              <div className="space-y-2">
+                <Label htmlFor="login-password">{t(($) => $.signin.password)}</Label>
+                <Input
+                  id="login-password"
+                  type="password"
+                  placeholder={t(($) => $.signin.password_placeholder)}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
+              </div>
+            ) : null}
             {error && (
               <p className="text-body text-destructive">{error}</p>
             )}
@@ -449,11 +511,34 @@ export function LoginPage({
             form="login-form"
             className="w-full"
             size="lg"
-            disabled={!email || loading}
+            disabled={
+              !email ||
+              loading ||
+              (loginMode === "password" && !password)
+            }
           >
             {loading
-              ? t(($) => $.signin.sending)
-              : t(($) => $.signin.continue)}
+              ? loginMode === "password"
+                ? t(($) => $.signin.signing_in)
+                : t(($) => $.signin.sending)
+              : loginMode === "password"
+                ? t(($) => $.signin.sign_in_password)
+                : t(($) => $.signin.continue)}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full"
+            disabled={loading}
+            onClick={() => {
+              setLoginMode((mode) => (mode === "password" ? "code" : "password"));
+              setPassword("");
+              setError("");
+            }}
+          >
+            {loginMode === "password"
+              ? t(($) => $.signin.use_code)
+              : t(($) => $.signin.use_password)}
           </Button>
           {(google || onGoogleLogin) && (
             <Button

@@ -227,6 +227,8 @@ function makeMember(user_id: string, name: string): MemberWithUser {
     name,
     email: `${user_id}@example.com`,
     avatar_url: null,
+    remark: "",
+    has_password: false,
     created_at: "2026-01-01T00:00:00Z",
   };
 }

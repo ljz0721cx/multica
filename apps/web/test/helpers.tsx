@@ -44,6 +44,8 @@ export const mockMembers: MemberWithUser[] = [
     name: "Test User",
     email: "test@multica.ai",
     avatar_url: null,
+    remark: "",
+    has_password: false,
   },
 ];
 

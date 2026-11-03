@@ -313,3 +313,58 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 	)
 	return i, err
 }
+
+const upsertUserPassword = `-- name: UpsertUserPassword :one
+INSERT INTO user_password (user_id, password_hash, updated_at, created_at)
+VALUES ($1, $2, now(), now())
+ON CONFLICT (user_id) DO UPDATE SET
+    password_hash = EXCLUDED.password_hash,
+    updated_at = now()
+RETURNING user_id, password_hash, updated_at, created_at
+`
+
+type UpsertUserPasswordParams struct {
+	UserID       pgtype.UUID `json:"user_id"`
+	PasswordHash string      `json:"password_hash"`
+}
+
+func (q *Queries) UpsertUserPassword(ctx context.Context, arg UpsertUserPasswordParams) (UserPassword, error) {
+	row := q.db.QueryRow(ctx, upsertUserPassword, arg.UserID, arg.PasswordHash)
+	var i UserPassword
+	err := row.Scan(&i.UserID, &i.PasswordHash, &i.UpdatedAt, &i.CreatedAt)
+	return i, err
+}
+
+const getUserPassword = `-- name: GetUserPassword :one
+SELECT user_id, password_hash, updated_at, created_at FROM user_password
+WHERE user_id = $1
+`
+
+func (q *Queries) GetUserPassword(ctx context.Context, userID pgtype.UUID) (UserPassword, error) {
+	row := q.db.QueryRow(ctx, getUserPassword, userID)
+	var i UserPassword
+	err := row.Scan(&i.UserID, &i.PasswordHash, &i.UpdatedAt, &i.CreatedAt)
+	return i, err
+}
+
+const deleteUserPassword = `-- name: DeleteUserPassword :exec
+DELETE FROM user_password WHERE user_id = $1
+`
+
+func (q *Queries) DeleteUserPassword(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserPassword, userID)
+	return err
+}
+
+const userHasPassword = `-- name: UserHasPassword :one
+SELECT EXISTS(
+    SELECT 1 FROM user_password WHERE user_id = $1 AND password_hash <> ''
+) AS has_password
+`
+
+func (q *Queries) UserHasPassword(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, userHasPassword, userID)
+	var hasPassword bool
+	err := row.Scan(&hasPassword)
+	return hasPassword, err
+}

@@ -21,7 +21,15 @@ import type {
   SearchIndexChanges,
   UpdateMeRequest,
   CreateMemberRequest,
+  CreateMemberDirectRequest,
+  SetMemberPasswordRequest,
   UpdateMemberRequest,
+  LLMModel,
+  LLMConfig,
+  UpsertLLMConfigRequest,
+  CreateLLMModelRequest,
+  UpdateLLMModelRequest,
+  ModelAdminAccess,
   ListIssuesParams,
   ListGroupedIssuesParams,
   IssueTableFacetsRequest,
@@ -485,9 +493,18 @@ import {
   ShareLinkListResponseSchema,
   ShareLinkInfoSchema,
   JoinShareLinkResponseSchema,
+  MemberWithUserSchema,
+  MemberWithUserListSchema,
+  LLMModelSchema,
+  LLMModelListSchema,
+  LLMConfigSchema,
+  ModelAdminAccessSchema,
   EMPTY_SHARE_LINK,
   EMPTY_SHARE_LINK_INFO,
   EMPTY_JOIN_SHARE_LINK_RESPONSE,
+  EMPTY_LLM_MODEL_LIST,
+  EMPTY_LLM_CONFIG,
+  EMPTY_MODEL_ADMIN_ACCESS,
   type IssueView,
   type IssueViewPreference,
   type CreateIssueViewRequest,
@@ -997,6 +1014,13 @@ export class ApiClient {
     return this.fetch("/auth/verify-code", {
       method: "POST",
       body: JSON.stringify({ email, code }),
+    });
+  }
+
+  async loginWithPassword(email: string, password: string): Promise<LoginResponse> {
+    return this.fetch("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
     });
   }
 
@@ -3389,7 +3413,10 @@ export class ApiClient {
 
   // Members
   async listMembers(workspaceId: string): Promise<MemberWithUser[]> {
-    return this.fetch(`/api/workspaces/${workspaceId}/members`);
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/members`);
+    return parseWithFallback(raw, MemberWithUserListSchema, [], {
+      endpoint: "GET /api/workspaces/{id}/members",
+    });
   }
 
   async createMember(workspaceId: string, data: CreateMemberRequest): Promise<Invitation> {
@@ -3399,15 +3426,139 @@ export class ApiClient {
     });
   }
 
+  async createMemberDirect(
+    workspaceId: string,
+    data: CreateMemberDirectRequest,
+  ): Promise<MemberWithUser> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/members/direct`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(
+      raw,
+      MemberWithUserSchema,
+      EMPTY_JOIN_SHARE_LINK_RESPONSE.member,
+      { endpoint: "POST /api/workspaces/{id}/members/direct" },
+    );
+  }
+
   async updateMember(workspaceId: string, memberId: string, data: UpdateMemberRequest): Promise<MemberWithUser> {
-    return this.fetch(`/api/workspaces/${workspaceId}/members/${memberId}`, {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/members/${memberId}`, {
       method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(
+      raw,
+      MemberWithUserSchema,
+      EMPTY_JOIN_SHARE_LINK_RESPONSE.member,
+      { endpoint: "PATCH /api/workspaces/{id}/members/{memberId}" },
+    );
+  }
+
+  async setMemberPassword(
+    workspaceId: string,
+    memberId: string,
+    data: SetMemberPasswordRequest,
+  ): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/members/${memberId}/password`, {
+      method: "POST",
       body: JSON.stringify(data),
     });
   }
 
   async deleteMember(workspaceId: string, memberId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/members/${memberId}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Server LLM models (agent picker + janle admin)
+
+  async listEnabledLLMModels(): Promise<LLMModel[]> {
+    const raw = await this.fetch<unknown>("/api/llm/models");
+    return parseWithFallback(raw, LLMModelListSchema, EMPTY_LLM_MODEL_LIST, {
+      endpoint: "GET /api/llm/models",
+    });
+  }
+
+  async getModelAdminAccess(): Promise<ModelAdminAccess> {
+    const raw = await this.fetch<unknown>("/api/llm/admin/access");
+    return parseWithFallback(raw, ModelAdminAccessSchema, EMPTY_MODEL_ADMIN_ACCESS, {
+      endpoint: "GET /api/llm/admin/access",
+    });
+  }
+
+  async getLLMConfigAdmin(): Promise<LLMConfig> {
+    const raw = await this.fetch<unknown>("/api/llm/admin/config");
+    return parseWithFallback(raw, LLMConfigSchema, EMPTY_LLM_CONFIG, {
+      endpoint: "GET /api/llm/admin/config",
+    });
+  }
+
+  async putLLMConfigAdmin(data: UpsertLLMConfigRequest): Promise<LLMConfig> {
+    const raw = await this.fetch<unknown>("/api/llm/admin/config", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, LLMConfigSchema, EMPTY_LLM_CONFIG, {
+      endpoint: "PUT /api/llm/admin/config",
+    });
+  }
+
+  async listLLMModelsAdmin(): Promise<LLMModel[]> {
+    const raw = await this.fetch<unknown>("/api/llm/admin/models");
+    return parseWithFallback(raw, LLMModelListSchema, EMPTY_LLM_MODEL_LIST, {
+      endpoint: "GET /api/llm/admin/models",
+    });
+  }
+
+  async createLLMModelAdmin(data: CreateLLMModelRequest): Promise<LLMModel> {
+    const raw = await this.fetch<unknown>("/api/llm/admin/models", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(
+      raw,
+      LLMModelSchema,
+      {
+        id: "",
+        model_id: "",
+        label: "",
+        enabled: false,
+        sort_order: 0,
+        created_at: "",
+        updated_at: "",
+      },
+      { endpoint: "POST /api/llm/admin/models" },
+    );
+  }
+
+  async updateLLMModelAdmin(
+    modelId: string,
+    data: UpdateLLMModelRequest,
+  ): Promise<LLMModel> {
+    const raw = await this.fetch<unknown>(`/api/llm/admin/models/${modelId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(
+      raw,
+      LLMModelSchema,
+      {
+        id: "",
+        model_id: "",
+        label: "",
+        enabled: false,
+        sort_order: 0,
+        created_at: "",
+        updated_at: "",
+      },
+      { endpoint: "PATCH /api/llm/admin/models/{modelId}" },
+    );
+  }
+
+  async deleteLLMModelAdmin(modelId: string): Promise<void> {
+    await this.fetch(`/api/llm/admin/models/${modelId}`, {
       method: "DELETE",
     });
   }

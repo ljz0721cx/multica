@@ -90,6 +90,10 @@ export interface MemberWithUser {
   name: string;
   email: string;
   avatar_url: string | null;
+  /** Admin-visible note; empty when unset. */
+  remark: string;
+  /** Whether the member has a password login set. */
+  has_password: boolean;
 }
 
 export interface Invitation {

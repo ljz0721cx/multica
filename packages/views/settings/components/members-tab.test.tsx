@@ -57,7 +57,12 @@ vi.mock("@multica/core/paths", () => ({
 }));
 vi.mock("@multica/core/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@multica/core/api")>()),
-  api: { createMember: mockCreateMember },
+  api: {
+    createMember: mockCreateMember,
+    createMemberDirect: vi.fn(),
+    setMemberPassword: vi.fn(),
+    updateMember: vi.fn(),
+  },
 }));
 vi.mock("@multica/core/auth", () => {
   const state = { user: { id: "user-1" } };

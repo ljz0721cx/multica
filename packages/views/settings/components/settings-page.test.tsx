@@ -31,15 +31,23 @@ vi.mock("./quick-actions-tab", stub("QuickActionsTab"));
 vi.mock("./keyboard-shortcuts-tab", stub("KeyboardShortcutsTab"));
 vi.mock("./plugins-tab", stub("PluginsTab"));
 vi.mock("./mcp-tab", stub("McpTab"));
+vi.mock("./models-tab", stub("ModelsTab"));
 vi.mock("./billing-tab", stub("BillingTab"));
 
 const shell = vi.hoisted(() => ({
   appsAvailable: false,
   role: "owner" as "owner" | "admin" | "member",
+  canManageModels: false,
 }));
 vi.mock("./connected-apps-tab", () => ({
   ConnectedAppsTab: () => <div>ConnectedAppsTab</div>,
   useComposioAvailable: () => shell.appsAvailable,
+}));
+vi.mock("@multica/core/api", () => ({
+  api: {
+    getModelAdminAccess: () =>
+      Promise.resolve({ can_manage: shell.canManageModels }),
+  },
 }));
 
 vi.mock("@multica/core/paths", () => ({
@@ -103,6 +111,7 @@ beforeEach(() => {
   navigationState.search = "";
   shell.appsAvailable = false;
   shell.role = "owner";
+  shell.canManageModels = false;
   configStore.getState().setFeatureFlags({});
   replace.mockClear();
   push.mockClear();

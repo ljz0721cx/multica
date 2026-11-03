@@ -50,6 +50,8 @@ export const members: MemberWithUser[] = [
     name: user.name,
     email: user.email,
     avatar_url: null,
+    remark: "",
+    has_password: false,
   },
 ];
 const titles = en.fixtures.issues.titles;

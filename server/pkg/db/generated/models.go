@@ -1198,7 +1198,34 @@ type Member struct {
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	Role        string             `json:"role"`
+	Remark      string             `json:"remark"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type UserPassword struct {
+	UserID       pgtype.UUID        `json:"user_id"`
+	PasswordHash string             `json:"password_hash"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+type LlmConfig struct {
+	ID              pgtype.UUID        `json:"id"`
+	BaseUrl         string             `json:"base_url"`
+	ApiKeyEncrypted []byte             `json:"api_key_encrypted"`
+	UpdatedBy       pgtype.UUID        `json:"updated_by"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type LlmModel struct {
+	ID        pgtype.UUID        `json:"id"`
+	ModelID   string             `json:"model_id"`
+	Label     string             `json:"label"`
+	Enabled   bool               `json:"enabled"`
+	SortOrder int32              `json:"sort_order"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type NotificationPreference struct {

@@ -18,6 +18,26 @@ INSERT INTO "user" (name, email, avatar_url)
 VALUES ($1, $2, $3)
 RETURNING *;
 
+-- name: UpsertUserPassword :one
+INSERT INTO user_password (user_id, password_hash, updated_at, created_at)
+VALUES ($1, $2, now(), now())
+ON CONFLICT (user_id) DO UPDATE SET
+    password_hash = EXCLUDED.password_hash,
+    updated_at = now()
+RETURNING *;
+
+-- name: GetUserPassword :one
+SELECT * FROM user_password
+WHERE user_id = $1;
+
+-- name: DeleteUserPassword :exec
+DELETE FROM user_password WHERE user_id = $1;
+
+-- name: UserHasPassword :one
+SELECT EXISTS(
+    SELECT 1 FROM user_password WHERE user_id = $1 AND password_hash <> ''
+) AS has_password;
+
 -- name: UpdateUser :one
 -- Patches the user-controlled profile fields. Each parameter follows
 -- COALESCE-on-NULL semantics so the handler can omit any field it

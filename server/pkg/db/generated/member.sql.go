@@ -12,25 +12,27 @@ import (
 )
 
 const createMember = `-- name: CreateMember :one
-INSERT INTO member (workspace_id, user_id, role)
-VALUES ($1, $2, $3)
-RETURNING id, workspace_id, user_id, role, created_at
+INSERT INTO member (workspace_id, user_id, role, remark)
+VALUES ($1, $2, $3, $4)
+RETURNING id, workspace_id, user_id, role, remark, created_at
 `
 
 type CreateMemberParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	Role        string      `json:"role"`
+	Remark      string      `json:"remark"`
 }
 
 func (q *Queries) CreateMember(ctx context.Context, arg CreateMemberParams) (Member, error) {
-	row := q.db.QueryRow(ctx, createMember, arg.WorkspaceID, arg.UserID, arg.Role)
+	row := q.db.QueryRow(ctx, createMember, arg.WorkspaceID, arg.UserID, arg.Role, arg.Remark)
 	var i Member
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
 		&i.UserID,
 		&i.Role,
+		&i.Remark,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -46,7 +48,7 @@ func (q *Queries) DeleteMember(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getMember = `-- name: GetMember :one
-SELECT id, workspace_id, user_id, role, created_at FROM member
+SELECT id, workspace_id, user_id, role, remark, created_at FROM member
 WHERE id = $1
 `
 
@@ -58,13 +60,14 @@ func (q *Queries) GetMember(ctx context.Context, id pgtype.UUID) (Member, error)
 		&i.WorkspaceID,
 		&i.UserID,
 		&i.Role,
+		&i.Remark,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getMemberByUserAndWorkspace = `-- name: GetMemberByUserAndWorkspace :one
-SELECT id, workspace_id, user_id, role, created_at FROM member
+SELECT id, workspace_id, user_id, role, remark, created_at FROM member
 WHERE user_id = $1 AND workspace_id = $2
 `
 
@@ -81,6 +84,7 @@ func (q *Queries) GetMemberByUserAndWorkspace(ctx context.Context, arg GetMember
 		&i.WorkspaceID,
 		&i.UserID,
 		&i.Role,
+		&i.Remark,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -127,7 +131,7 @@ func (q *Queries) GetRealtimeMemberships(ctx context.Context, arg GetRealtimeMem
 }
 
 const listMembers = `-- name: ListMembers :many
-SELECT id, workspace_id, user_id, role, created_at FROM member
+SELECT id, workspace_id, user_id, role, remark, created_at FROM member
 WHERE workspace_id = $1
 ORDER BY created_at ASC
 `
@@ -146,6 +150,7 @@ func (q *Queries) ListMembers(ctx context.Context, workspaceID pgtype.UUID) ([]M
 			&i.WorkspaceID,
 			&i.UserID,
 			&i.Role,
+			&i.Remark,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -159,8 +164,12 @@ func (q *Queries) ListMembers(ctx context.Context, workspaceID pgtype.UUID) ([]M
 }
 
 const listMembersWithUser = `-- name: ListMembersWithUser :many
-SELECT m.id, m.workspace_id, m.user_id, m.role, m.created_at,
-       u.name as user_name, u.email as user_email, u.avatar_url as user_avatar_url
+SELECT m.id, m.workspace_id, m.user_id, m.role, m.remark, m.created_at,
+       u.name as user_name, u.email as user_email, u.avatar_url as user_avatar_url,
+       EXISTS(
+           SELECT 1 FROM user_password up
+           WHERE up.user_id = u.id AND up.password_hash <> ''
+       ) AS has_password
 FROM member m
 JOIN "user" u ON u.id = m.user_id
 WHERE m.workspace_id = $1
@@ -172,10 +181,12 @@ type ListMembersWithUserRow struct {
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	Role          string             `json:"role"`
+	Remark        string             `json:"remark"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UserName      string             `json:"user_name"`
 	UserEmail     string             `json:"user_email"`
 	UserAvatarUrl pgtype.Text        `json:"user_avatar_url"`
+	HasPassword   bool               `json:"has_password"`
 }
 
 func (q *Queries) ListMembersWithUser(ctx context.Context, workspaceID pgtype.UUID) ([]ListMembersWithUserRow, error) {
@@ -192,10 +203,12 @@ func (q *Queries) ListMembersWithUser(ctx context.Context, workspaceID pgtype.UU
 			&i.WorkspaceID,
 			&i.UserID,
 			&i.Role,
+			&i.Remark,
 			&i.CreatedAt,
 			&i.UserName,
 			&i.UserEmail,
 			&i.UserAvatarUrl,
+			&i.HasPassword,
 		); err != nil {
 			return nil, err
 		}
@@ -236,7 +249,7 @@ func (q *Queries) ListWorkspaceManagerUserIDs(ctx context.Context, workspaceID p
 const updateMemberRole = `-- name: UpdateMemberRole :one
 UPDATE member SET role = $2
 WHERE id = $1
-RETURNING id, workspace_id, user_id, role, created_at
+RETURNING id, workspace_id, user_id, role, remark, created_at
 `
 
 type UpdateMemberRoleParams struct {
@@ -252,6 +265,60 @@ func (q *Queries) UpdateMemberRole(ctx context.Context, arg UpdateMemberRolePara
 		&i.WorkspaceID,
 		&i.UserID,
 		&i.Role,
+		&i.Remark,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateMemberRemark = `-- name: UpdateMemberRemark :one
+UPDATE member SET remark = $2
+WHERE id = $1
+RETURNING id, workspace_id, user_id, role, remark, created_at
+`
+
+type UpdateMemberRemarkParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Remark string      `json:"remark"`
+}
+
+func (q *Queries) UpdateMemberRemark(ctx context.Context, arg UpdateMemberRemarkParams) (Member, error) {
+	row := q.db.QueryRow(ctx, updateMemberRemark, arg.ID, arg.Remark)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.UserID,
+		&i.Role,
+		&i.Remark,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateMemberRoleAndRemark = `-- name: UpdateMemberRoleAndRemark :one
+UPDATE member SET
+    role = COALESCE($2, role),
+    remark = COALESCE($3, remark)
+WHERE id = $1
+RETURNING id, workspace_id, user_id, role, remark, created_at
+`
+
+type UpdateMemberRoleAndRemarkParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Role   *string     `json:"role"`
+	Remark *string     `json:"remark"`
+}
+
+func (q *Queries) UpdateMemberRoleAndRemark(ctx context.Context, arg UpdateMemberRoleAndRemarkParams) (Member, error) {
+	row := q.db.QueryRow(ctx, updateMemberRoleAndRemark, arg.ID, arg.Role, arg.Remark)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.UserID,
+		&i.Role,
+		&i.Remark,
 		&i.CreatedAt,
 	)
 	return i, err

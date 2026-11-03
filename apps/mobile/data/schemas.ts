@@ -608,6 +608,8 @@ export const MemberWithUserSchema: z.ZodType<MemberWithUser> = z.object({
   name: z.string().default(""),
   email: z.string().default(""),
   avatar_url: z.string().nullable().default(null),
+  remark: z.string().default(""),
+  has_password: z.boolean().default(false),
 }).loose();
 
 export const MemberListSchema = z.array(MemberWithUserSchema).default([]);

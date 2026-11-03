@@ -258,7 +258,8 @@
     "managed_by_runtime_title": "Le choix du modèle est géré par ce runtime.",
     "managed_by_runtime_hint": "Configurez le modèle sur l'hôte du runtime (Hermes, par exemple, le lit dans son propre fichier de configuration).",
     "discovery_failed": "échec de la détection",
-    "clear_full": "Effacer la sélection (utiliser la valeur par défaut du fournisseur)"
+    "clear_full": "Effacer la sélection (utiliser la valeur par défaut du fournisseur)",
+    "server_provider": "Server"
   },
   "tabs": {
     "overview": "Vue d'ensemble",

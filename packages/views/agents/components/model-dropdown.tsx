@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Cpu, Loader2, Plus, Check, Info } from "lucide-react";
+import { api } from "@multica/core/api";
 import {
   refreshRuntimeModels,
   runtimeModelsOptions,
@@ -17,6 +18,8 @@ import { Label } from "@multica/ui/components/ui/label";
 import { useT } from "../../i18n";
 import { UnavailableModelsNote } from "./unavailable-models-note";
 import { ModelSearchHeader } from "./model-search-header";
+
+const SERVER_PROVIDER = "Server";
 
 // ModelDropdown renders a searchable, creatable model picker for an agent.
 // It fetches the supported-model catalog from the selected runtime — the
@@ -56,13 +59,31 @@ export function ModelDropdown({
   const modelsQuery = useQuery(
     runtimeModelsOptions(runtimeOnline ? runtimeId : null),
   );
+  const serverModelsQuery = useQuery({
+    queryKey: ["llm", "models", "enabled"],
+    queryFn: () => api.listEnabledLLMModels(),
+    staleTime: 60_000,
+  });
 
   const supported = modelsQuery.data?.supported ?? true;
   // Stable reference for the model list — `?? []` would mint a fresh
   // array each render and force every downstream useMemo to invalidate.
-  const models = useMemo(
+  const runtimeModels = useMemo(
     () => modelsQuery.data?.models ?? [],
     [modelsQuery.data],
+  );
+  const serverModels = useMemo<RuntimeModel[]>(
+    () =>
+      (serverModelsQuery.data ?? []).map((m) => ({
+        id: m.model_id,
+        label: m.label || m.model_id,
+        provider: SERVER_PROVIDER,
+      })),
+    [serverModelsQuery.data],
+  );
+  const models = useMemo(
+    () => [...serverModels, ...runtimeModels],
+    [serverModels, runtimeModels],
   );
   const grouped = useMemo(() => groupByProvider(models), [models]);
   // Advisory only — never merged into `models`, so nothing below can select one.
@@ -206,18 +227,20 @@ export function ModelDropdown({
               </div>
             )}
 
-            {!modelsQuery.isLoading &&
+            {!(modelsQuery.isLoading && serverModelsQuery.isLoading) &&
               Object.entries(filtered).map(([provider, list]) => (
                 <div key={provider} className="mb-1">
                   {provider && (
                     <div className="px-2 pt-1.5 pb-0.5 text-caption font-medium uppercase tracking-wide text-muted-foreground">
-                      {provider}
+                      {provider === SERVER_PROVIDER
+                        ? t(($) => $.model_dropdown.server_provider)
+                        : provider}
                     </div>
                   )}
                   {list.map((m) => (
                     <button
                       type="button"
-                      key={m.id}
+                      key={`${provider}:${m.id}`}
                       onClick={() => select(m.id)}
                       className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-body transition-colors ${
                         m.id === value ? "bg-accent" : "hover:bg-accent/50"

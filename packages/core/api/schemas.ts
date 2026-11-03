@@ -55,7 +55,10 @@ import type {
   InboxItem,
   InboxWorkspaceUnread,
   Label,
+  LLMConfig,
+  LLMModel,
   MemberWithUser,
+  ModelAdminAccess,
   IssueProperty,
   ListPropertiesResponse,
   QuickAction,
@@ -3684,7 +3687,11 @@ export const MemberWithUserSchema = z.object({
   name: z.string().optional().default(""),
   email: z.string().optional().default(""),
   avatar_url: z.string().nullable().optional().default(null),
+  remark: z.string().optional().default(""),
+  has_password: z.boolean().optional().default(false),
 }).loose();
+
+export const MemberWithUserListSchema = z.array(MemberWithUserSchema);
 
 export const JoinShareLinkResponseSchema = z.object({
   member: MemberWithUserSchema,
@@ -3706,9 +3713,47 @@ export const EMPTY_JOIN_SHARE_LINK_RESPONSE: {
     name: "",
     email: "",
     avatar_url: null,
+    remark: "",
+    has_password: false,
   },
   workspace_id: "",
   workspace_slug: "",
+};
+
+export const LLMModelSchema = z.object({
+  id: z.string(),
+  model_id: z.string().optional().default(""),
+  label: z.string().optional().default(""),
+  enabled: z.boolean().optional().default(false),
+  sort_order: z.number().optional().default(0),
+  created_at: z.string().optional().default(""),
+  updated_at: z.string().optional().default(""),
+}).loose();
+
+export const LLMModelListSchema = z.array(LLMModelSchema);
+
+export const EMPTY_LLM_MODEL_LIST: LLMModel[] = [];
+
+export const LLMConfigSchema = z.object({
+  base_url: z.string().optional().default(""),
+  has_api_key: z.boolean().optional().default(false),
+  updated_at: z.string().optional().default(""),
+  can_manage: z.boolean().optional().default(false),
+}).loose();
+
+export const EMPTY_LLM_CONFIG: LLMConfig = {
+  base_url: "",
+  has_api_key: false,
+  updated_at: "",
+  can_manage: false,
+};
+
+export const ModelAdminAccessSchema = z.object({
+  can_manage: z.boolean().optional().default(false),
+}).loose();
+
+export const EMPTY_MODEL_ADMIN_ACCESS: ModelAdminAccess = {
+  can_manage: false,
 };
 
 export const WakeupConditionSchema = z.union([

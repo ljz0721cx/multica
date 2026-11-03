@@ -207,6 +207,16 @@ export function useSettingsSearchIndex(
         title: t(($) => $.page.tabs.mcp),
         description: t(($) => $.mcp.description),
       },
+      {
+        tab: "models",
+        anchor: "gateway",
+        title: t(($) => $.models.gateway_title),
+      },
+      {
+        tab: "models",
+        anchor: "catalog",
+        title: t(($) => $.models.catalog_title),
+      },
     ];
     // Rows without an anchor describe a whole page: fold their copy into the
     // page entry so each page is indexed once, with its description.

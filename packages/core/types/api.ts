@@ -628,8 +628,66 @@ export interface CreateMemberRequest {
   role?: MemberRole;
 }
 
+/** Immediate membership (no invite email). Admin/owner only. */
+export interface CreateMemberDirectRequest {
+  email: string;
+  name?: string;
+  remark?: string;
+  password?: string;
+  role?: MemberRole;
+}
+
+export interface SetMemberPasswordRequest {
+  password: string;
+}
+
+/** At least one of role or remark must be provided. */
 export interface UpdateMemberRequest {
-  role: MemberRole;
+  role?: MemberRole;
+  remark?: string;
+}
+
+// Server-managed LLM gateway (janle model admin)
+
+export interface LLMModel {
+  id: string;
+  model_id: string;
+  label: string;
+  enabled: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LLMConfig {
+  base_url: string;
+  has_api_key: boolean;
+  updated_at?: string;
+  can_manage?: boolean;
+}
+
+export interface UpsertLLMConfigRequest {
+  base_url: string;
+  /** Omit to keep the existing key; empty string clears it. */
+  api_key?: string | null;
+}
+
+export interface CreateLLMModelRequest {
+  model_id: string;
+  label?: string;
+  enabled?: boolean;
+  sort_order?: number;
+}
+
+export interface UpdateLLMModelRequest {
+  model_id?: string;
+  label?: string;
+  enabled?: boolean;
+  sort_order?: number;
+}
+
+export interface ModelAdminAccess {
+  can_manage: boolean;
 }
 
 // Personal Access Tokens

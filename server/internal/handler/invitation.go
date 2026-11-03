@@ -485,7 +485,7 @@ func (h *Handler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 			})
 			switch {
 			case memberErr == nil:
-				writeJSON(w, http.StatusOK, h.memberWithUserResponse(member, user))
+				writeJSON(w, http.StatusOK, h.memberWithUserResponse(r.Context(), member, user))
 				return
 			case errors.Is(memberErr, pgx.ErrNoRows):
 				// The membership from the first accept is gone; fall through
@@ -532,6 +532,7 @@ func (h *Handler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID: accepted.WorkspaceID,
 		UserID:      user.ID,
 		Role:        accepted.Role,
+		Remark:      "",
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -575,7 +576,7 @@ func (h *Handler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	slog.Info("invitation accepted", "invitation_id", invitationID, "user_id", userID, "workspace_id", uuidToString(accepted.WorkspaceID))
 
 	wsID := uuidToString(accepted.WorkspaceID)
-	memberResp := h.memberWithUserResponse(member, user)
+	memberResp := h.memberWithUserResponse(r.Context(), member, user)
 
 	// Broadcast member:added so existing clients update their member lists.
 	eventPayload := map[string]any{"member": memberResp}
