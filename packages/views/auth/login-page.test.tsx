@@ -29,8 +29,10 @@ function renderWithI18n(ui: ReactElement) {
 
 const mockSendCode = vi.hoisted(() => vi.fn());
 const mockVerifyCode = vi.hoisted(() => vi.fn());
+const mockLoginWithPassword = vi.hoisted(() => vi.fn());
 const mockApiListWorkspaces = vi.hoisted(() => vi.fn());
 const mockApiVerifyCode = vi.hoisted(() => vi.fn());
+const mockApiLoginWithPassword = vi.hoisted(() => vi.fn());
 const mockApiSetToken = vi.hoisted(() => vi.fn());
 const mockApiGetMe = vi.hoisted(() => vi.fn());
 const mockApiIssueCliToken = vi.hoisted(() => vi.fn());
@@ -52,6 +54,7 @@ vi.mock("@multica/core/auth", () => ({
       const state = {
         sendCode: mockSendCode,
         verifyCode: mockVerifyCode,
+        loginWithPassword: mockLoginWithPassword,
         expired: mockAuthState.expired,
       };
       return selector ? selector(state) : state;
@@ -60,6 +63,7 @@ vi.mock("@multica/core/auth", () => ({
       getState: () => ({
         sendCode: mockSendCode,
         verifyCode: mockVerifyCode,
+        loginWithPassword: mockLoginWithPassword,
       }),
     },
   ),
@@ -69,6 +73,7 @@ vi.mock("@multica/core/api", () => ({
   api: {
     listWorkspaces: mockApiListWorkspaces,
     verifyCode: mockApiVerifyCode,
+    loginWithPassword: mockApiLoginWithPassword,
     setToken: mockApiSetToken,
     getMe: mockApiGetMe,
     issueCliToken: mockApiIssueCliToken,
@@ -90,6 +95,15 @@ import { LoginPage, validateCliCallback } from "./login-page";
 function getOTPInput() {
   // input-otp renders a single hidden <input> that holds the OTP value
   return screen.getByRole("textbox", { hidden: true });
+}
+
+/** Password is the default mode; OTP suites switch explicitly. */
+async function switchToCodeMode(
+  user: ReturnType<typeof userEvent.setup>,
+) {
+  await user.click(
+    screen.getByRole("button", { name: /sign in with email code/i }),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -140,11 +154,12 @@ describe("LoginPage", () => {
       screen.getByText(/sign in to multica/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/enter your email to get a login code/i),
+      screen.getByText(/sign in with email and password/i),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /continue/i }),
+      screen.getByRole("button", { name: /^sign in$/i }),
     ).toBeInTheDocument();
   });
 
@@ -155,24 +170,34 @@ describe("LoginPage", () => {
   it("shows error when submitting with empty email", async () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
-    // The Continue button is disabled when email is empty, so we submit the
-    // form programmatically the same way the component does — via form submit.
-    // Since the button is disabled, we directly call handleSendCode's logic
-    // by removing the required attr and submitting.
     const emailInput = screen.getByLabelText(/email/i);
-    // The input has required + the button is disabled, so we need to type
-    // a space then clear to trigger the empty-email error path.
-    // Actually, the component guards `if (!email)` in handleSendCode.
-    // But the button is disabled when `!email`. Let's verify:
-    const button = screen.getByRole("button", { name: /continue/i });
+    const button = screen.getByRole("button", { name: /^sign in$/i });
     expect(button).toBeDisabled();
 
-    // Type an email to enable button, then clear it — button becomes disabled again
     const user = userEvent.setup();
     await user.type(emailInput, "a");
+    // Password mode still needs a password before the primary button enables.
+    expect(button).toBeDisabled();
+    await user.type(screen.getByLabelText(/^password$/i), "password1");
     expect(button).not.toBeDisabled();
     await user.clear(emailInput);
     expect(button).toBeDisabled();
+  });
+
+  it("calls loginWithPassword on form submit", async () => {
+    mockLoginWithPassword.mockResolvedValueOnce({ id: "u1" });
+    mockApiListWorkspaces.mockResolvedValueOnce([]);
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/email/i), "test@example.com");
+    await user.type(screen.getByLabelText(/^password$/i), "password1");
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
+
+    expect(mockLoginWithPassword).toHaveBeenCalledWith(
+      "test@example.com",
+      "password1",
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -184,6 +209,7 @@ describe("LoginPage", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -196,6 +222,7 @@ describe("LoginPage", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -207,6 +234,7 @@ describe("LoginPage", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -223,6 +251,7 @@ describe("LoginPage", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -240,6 +269,7 @@ describe("LoginPage", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -253,6 +283,7 @@ describe("LoginPage", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -312,6 +343,7 @@ describe("LoginPage", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -339,6 +371,7 @@ describe("LoginPage", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -358,6 +391,7 @@ describe("LoginPage", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -623,6 +657,7 @@ describe("LoginPage", () => {
     );
 
     const user = userEvent.setup();
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "cli@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -684,6 +719,7 @@ describe("LoginPage", () => {
     );
 
     const user = userEvent.setup();
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -711,6 +747,7 @@ describe("LoginPage", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
     const user = userEvent.setup();
+    await switchToCodeMode(user);
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
