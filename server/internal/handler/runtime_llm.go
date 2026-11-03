@@ -60,6 +60,9 @@ func listRuntimeServerModelIDs(ctx context.Context, q *db.Queries, runtimeID pgt
 }
 
 func (h *Handler) runtimeResponse(ctx context.Context, rt db.AgentRuntime) AgentRuntimeResponse {
+	// Self-heal runtimes that were online before the allowlist feature shipped
+	// (or never re-registered): empty allowlist gets the current enabled catalog.
+	h.ensureRuntimeLLMBindings(ctx, h.Queries, rt.ID)
 	resp := runtimeToResponse(rt)
 	resp.ServerModelIDs = listRuntimeServerModelIDs(ctx, h.Queries, rt.ID)
 	return resp
