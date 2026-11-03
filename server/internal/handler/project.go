@@ -441,7 +441,7 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	creator, _ := h.parseUserUUIDOrZero(userID)
+	createdBy := creator.ID
 	resourceRows := make([]db.ProjectResource, 0, len(req.Resources))
 	for i, res := range req.Resources {
 		var label pgtype.Text
@@ -459,7 +459,7 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 			ResourceRef:  normalizedRefs[i],
 			Label:        label,
 			Position:     position,
-			CreatedBy:    creator,
+			CreatedBy:    createdBy,
 		})
 		if err != nil {
 			if isUniqueViolation(err) {
