@@ -13,11 +13,14 @@ export type RuntimeConfigResult =
   | { ok: true; config: RuntimeConfig }
   | { ok: false; error: RuntimeConfigError };
 
+// Self-host / LAN default for this deployment. Packaged installs without
+// ~/.multica/desktop.json connect here instead of Multica Cloud. Operators
+// can still override with desktop.json or a build-time VITE_* bake-in.
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   schemaVersion: 1,
-  apiUrl: "https://api.multica.ai",
-  wsUrl: "wss://api.multica.ai/ws",
-  appUrl: "https://multica.ai",
+  apiUrl: "http://172.16.105.51:8080",
+  wsUrl: "ws://172.16.105.51:8080/ws",
+  appUrl: "http://172.16.105.51:3000",
 });
 
 const LOCAL_DEV_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({

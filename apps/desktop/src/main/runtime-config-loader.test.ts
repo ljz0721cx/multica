@@ -35,7 +35,7 @@ describe("loadRuntimeConfig", () => {
     });
   });
 
-  it("uses cloud defaults when packaged config is absent", async () => {
+  it("uses LAN self-host defaults when packaged config is absent", async () => {
     const dir = await mkdtemp(join(tmpdir(), "multica-desktop-config-"));
     await expect(
       loadRuntimeConfig({
@@ -47,9 +47,31 @@ describe("loadRuntimeConfig", () => {
       ok: true,
       config: {
         schemaVersion: 1,
-        apiUrl: "https://api.multica.ai",
-        wsUrl: "wss://api.multica.ai/ws",
-        appUrl: "https://multica.ai",
+        apiUrl: "http://172.16.105.51:8080",
+        wsUrl: "ws://172.16.105.51:8080/ws",
+        appUrl: "http://172.16.105.51:3000",
+      },
+    });
+  });
+
+  it("uses baked VITE env when packaged config is absent", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "multica-desktop-config-"));
+    await expect(
+      loadRuntimeConfig({
+        isDev: false,
+        configPath: join(dir, "missing.json"),
+        env: {
+          apiUrl: "http://10.0.0.2:8080",
+          appUrl: "http://10.0.0.2:3000",
+        },
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      config: {
+        schemaVersion: 1,
+        apiUrl: "http://10.0.0.2:8080",
+        wsUrl: "ws://10.0.0.2:8080/ws",
+        appUrl: "http://10.0.0.2:3000",
       },
     });
   });

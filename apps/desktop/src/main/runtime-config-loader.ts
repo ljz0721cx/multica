@@ -29,6 +29,15 @@ export async function loadRuntimeConfig(options: {
     return { ok: true, config: parseRuntimeConfig(raw) };
   } catch (err) {
     if (isMissingFileError(err)) {
+      // Prefer build-time VITE_* when a self-host package baked them in;
+      // otherwise fall back to DEFAULT_RUNTIME_CONFIG (LAN for this fork).
+      if (options.env.apiUrl || options.env.wsUrl || options.env.appUrl) {
+        try {
+          return { ok: true, config: runtimeConfigFromDevEnv(options.env) };
+        } catch (envErr) {
+          return { ok: false, error: { message: errorMessage(envErr) } };
+        }
+      }
       return { ok: true, config: { ...DEFAULT_RUNTIME_CONFIG } };
     }
     return {
